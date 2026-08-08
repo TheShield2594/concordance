@@ -1,74 +1,109 @@
 # Concordance
 
-A self-hosted personal Bible study app. Four public-domain translations, Nave's
-Topical Bible as a topic index, full-text search over both, and your own notes —
-all in one SQLite file, with no network calls at runtime.
+A Bible study app for one person, running on hardware you own. Four public domain
+translations, Nave's Topical Bible, full text search across both, and somewhere to
+keep your notes. All of it lives in a single SQLite file.
 
-Single user, no auth. Meant to sit on a homelab box and be reached over Tailscale.
+No accounts. No API keys. No calls out to anybody's server once it's installed. It
+starts up, opens a file on disk, and answers questions about it.
 
-```
-make setup     # venv, download sources, build the database, build the UI
-make serve     # http://localhost:8000  (API + UI from one process)
-```
+| Search | Topics | Read |
+| :----: | :----: | :--: |
+| <img src="docs/screenshots/search.png" width="260"> | <img src="docs/screenshots/topic.png" width="260"> | <img src="docs/screenshots/read.png" width="260"> |
 
-`make setup` takes a few minutes, almost all of it downloading ~26 MB of source
-texts. It produces `data/concordance.db` (~40 MB), which is the whole app state —
-back that file up and you have backed up your notes.
-
-## Stack
-
-| Layer    | Choice                                                          |
-| -------- | --------------------------------------------------------------- |
-| Backend  | FastAPI + Python's stdlib `sqlite3` (FTS5 is compiled in)         |
-| Database | One SQLite file, WAL mode                                        |
-| Frontend | React 18 + Vite, no UI framework, fonts self-hosted via fontsource |
-
-Nothing is fetched from the internet while the app runs. The translations and
-Nave's are pulled once by `etl/fetch_sources.py`; after that the app is fully
-offline, which is the point of putting it behind Tailscale.
-
-## Layout
+## Getting it running
 
 ```
-etl/            one-time data pipeline
-  fetch_sources.py   download the public-domain sources
+make setup
+make serve
+```
+
+`make setup` builds a virtualenv, pulls down about 26 MB of scripture, grinds it
+into `data/concordance.db`, and compiles the interface. Budget three minutes, most
+of it download time. Then `make serve` binds `0.0.0.0:8000` and hands out both the
+API and the UI from one process.
+
+That database file is the entire application state. Copy it somewhere safe and your
+notes are backed up. Lose it and `make data` rebuilds everything except the notes,
+which is a good argument for copying it somewhere safe.
+
+## What's in it
+
+**Search** runs over 124,372 verses through SQLite's FTS5, filtered by translation
+with the chips at the top. Matched words come back marked in the verse text. Results
+arrive best-match-first by default; the small link in the Verses header flips them
+into Genesis-to-Revelation order, which is what you want when you're tracing a word
+through the canon rather than hunting one line.
+
+**Topics** searches the same box against 4,667 Nave's topic names. Type "pray" and
+PRAYER comes back with its 711 references, grouped under the sub-headings Nave's
+wrote for them: "Daily, in the morning," "Prayer test proposed by Elijah," and so
+on down the list.
+
+**Reading** gives you the chapter with its verses numbered, prev and next running
+across book boundaries, and a dot beside any verse you've written on.
+
+**Notes** attach to a verse and live in the same database as everything else, which
+means they surface in search results next to scripture. Search "prison" and you'll
+get Acts 16 alongside the thing you wrote about Philippians last March.
+
+**Cross-refs** work through Nave's rather than a cross-reference dataset, since v1
+has no such dataset and Strong's is out of scope. Two verses are related when Nave's
+files them under the same topic, smallest topics first, so PHP.4.6 pulls up CARE and
+THANKFULNESS before it pulls up GOD.
+
+## How it's built
+
+FastAPI on Python's stdlib `sqlite3`, which ships with FTS5 already compiled in.
+React 18 and Vite on the front, no UI framework, fonts bundled into the build so
+nothing phones Google. One SQLite file in WAL mode.
+
+```
+etl/         the one-time data pipeline
+  fetch_sources.py   download the public domain sources
   build_db.py        parse them into data/concordance.db
   schema.sql         the schema, commented
-  books.py           canonical 66-book table + name/code resolution
-server/         FastAPI app (main.py, search.py, refs.py, db.py)
-web/            React SPA (src/views.jsx, components.jsx, sheets.jsx, styles.css)
-tests/          unittest suite: parsing rules + full API coverage
+  books.py           66 books, their codes, and name resolution
+server/      the API: main.py, search.py, refs.py, db.py
+web/         the SPA: views.jsx, components.jsx, sheets.jsx, styles.css
+tests/       34 tests over the parsing rules and every endpoint
 ```
 
-## Data
+Development is `make dev`, which puts the API on 8000 and Vite with hot reload on
+5173, proxying `/api` across.
 
-| Source                                        | Used for      | License                    |
-| --------------------------------------------- | ------------- | -------------------------- |
-| [scrollmapper/bible_databases][sm]             | KJV, ASV, BSB | Public domain texts        |
-| [seven1m/open-bibles][ob] (`eng-web.usfx.xml`) | WEB           | Public domain              |
-| [BradyStephenson/bible-data][bd]               | Nave's        | Dataset CC BY 4.0; Nave's itself is public domain |
+## Where the text comes from
+
+| Source | Gives us | License |
+| --- | --- | --- |
+| [scrollmapper/bible_databases][sm] | KJV, ASV, BSB | public domain texts |
+| [seven1m/open-bibles][ob] | WEB | public domain |
+| [BradyStephenson/bible-data][bd] | Nave's | dataset CC BY 4.0, Nave's itself public domain |
 
 [sm]: https://github.com/scrollmapper/bible_databases
 [ob]: https://github.com/seven1m/open-bibles
 [bd]: https://github.com/BradyStephenson/bible-data
 
-Two notes on sourcing:
+Two wrinkles worth knowing about.
 
-- **WEB comes from a different source than the other three.** scrollmapper has no
-  WEB, so it is parsed out of USFX XML instead, dropping footnote and
-  cross-reference apparatus so only scripture text is indexed.
-- **bolls.life was unreachable** from the machine this was built on (the outbound
-  proxy refuses it), so the translations come from GitHub-hosted datasets. Same
-  public-domain texts, different host.
+bolls.life was unreachable from the machine this got built on, so the translations
+come from GitHub-hosted datasets instead. Same public domain texts, different host.
 
-Loaded: 124,372 verses across four translations, 4,667 topics, 76,141 topical
-references. The ETL discards references that do not resolve to a real verse
-(62 of them, mis-read out of Nave's prose headings).
+WEB comes from a different source than the other three because scrollmapper doesn't
+carry it. It arrives as USFX XML, so `build_db.py` walks the tree and throws out the
+footnote and cross-reference apparatus before anything reaches the index. Genesis 1:1
+in WEB carries a footnote about אֱלֹהִ֑ים; you'd rather not find that by searching
+for "Hebrew."
 
-## Schema
+The ETL also drops references that don't resolve to a real verse. Nave's entries mix
+prose and citations on one line, and the parser occasionally reads a number out of
+the prose. Checking each reference against the verse table catches those, 62 of them
+across 76,141.
+
+## The database
 
 ```sql
-verses(id, book, chapter, verse, translation, text)          -- book is a USFM code: GEN, PHP
+verses(id, book, chapter, verse, translation, text)
 topics(id, name, section)
 topic_verses(topic_id, verse_ref, book, chapter, verse_start, verse_end, heading, seq)
 notes(id, verse_ref, book, chapter, verse, translation, body, created_at, updated_at)
@@ -76,66 +111,66 @@ books(code, name, ordinal, testament)
 translations(code, name, year, license, source)
 ```
 
-`verse_ref` is the call number: `PHP.4.6`, or `PHP.4.6-7` for a range, or `NUM.17`
-for a whole chapter. The normalised `book`/`chapter`/`verse_*` columns sit
-alongside it so references can be joined against verses without parsing strings.
+`book` holds a three-letter USFM code, so any row can name itself: `PHP.4.6`. Ranges
+keep their shape (`PHP.4.6-7`) and a whole-chapter citation drops the last segment
+(`NUM.17`). `topic_verses` carries the string for display and the split columns for
+joining, so nothing has to parse a reference at query time.
 
-Three FTS5 indexes: `verses_fts` and `notes_fts` (porter-stemmed, so "loved"
-finds "love"), and `topics_fts` (deliberately **not** stemmed — porter rewrites a
-query prefix, so "pray" would prefix-match PRAISE and miss PRAYER).
+Three FTS5 indexes. `verses_fts` and `notes_fts` use the porter stemmer, so "loved"
+finds "love." `topics_fts` deliberately doesn't, and that took a bug to learn:
+porter rewrites your query prefix the same way it rewrote the index, so "pray" stems
+to "prai," prefix-matches PRAISE, and never reaches PRAYER. Topic names now index
+raw, with a substring fallback behind them.
 
-`verses` is read-only at runtime and its index is built wholesale by the ETL.
-`notes` change constantly, so triggers keep `notes_fts` in step.
+Verses never change after the ETL runs, so their index gets built in one shot and
+left alone. Notes change constantly, so triggers keep `notes_fts` honest.
 
-## API
+## The API
 
-| Endpoint                             | Does                                                       |
-| ------------------------------------ | ---------------------------------------------------------- |
-| `GET /api/meta`                      | translations, books, chapter counts                        |
-| `GET /api/search?q=&translation=&sort=` | verses + matching topic names + your notes, one call     |
-| `GET /api/topics?q=`                 | topic names with reference counts                          |
-| `GET /api/topics/{id}`               | one topic, references grouped under Nave's sub-headings     |
-| `GET /api/chapter/{book}/{chapter}`  | full chapter, prev/next, per-verse note counts              |
-| `GET /api/verse/{ref}`               | one verse, one or all translations                          |
-| `GET /api/cross-refs/{ref}`          | related verses via shared Nave's topics                     |
-| `GET/POST/PATCH/DELETE /api/notes`   | personal notes                                              |
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/meta` | translations, books, chapter counts |
+| `GET /api/search?q=&translation=&sort=` | verses, matching topic names, and your notes |
+| `GET /api/topics?q=` | topic names with reference counts |
+| `GET /api/topics/{id}` | one topic, grouped under Nave's sub-headings |
+| `GET /api/chapter/{book}/{chapter}` | a chapter, its neighbours, per-verse note counts |
+| `GET /api/verse/{ref}` | one verse in one translation or all four |
+| `GET /api/cross-refs/{ref}` | related verses by way of shared topics |
+| `GET POST PATCH DELETE /api/notes` | your notes |
 
-Interactive docs at `/api/docs`.
+Interactive docs sit at `/api/docs`.
 
-Search results carry both `text` (clean) and `segments` (`[{text, hit}]`) so the
-UI can mark matched terms without interpolating HTML. `sort=relevance` (bm25) is
-the default; `sort=canonical` walks Genesis to Revelation. Whatever is typed is
-treated as literal words — quotes, `-`, `*` and `AND` are quoted into inert
-terms rather than reaching FTS5 as operators, and `"phrases in quotes"` are kept
-whole.
+Search results carry `text` clean and `segments` as `[{text, hit}]`, so the UI can
+mark the matches without anyone interpolating HTML into a verse. Whatever you type
+gets quoted into literal FTS terms before it goes near the query parser, which means
+a stray `-` or the word `AND` searches for itself instead of throwing a syntax error.
+Quoted phrases survive as phrases.
 
-**Cross-references are derived, not sourced.** There is no cross-reference
-dataset in v1: two verses are related when Nave's files them under the same
-topic, smallest topics first.
+## The look
 
-## Design
+Ink indigo `#1C2333` underneath, parchment `#E8DCC4` on top of it, oxblood `#7A2E2E`
+for the primary accent, verdigris `#5C7A6B` for the secondary, paper `#F2ECD9` for
+cards. Fraunces sets headings, Source Serif 4 carries scripture, IBM Plex Mono does
+every reference, label, and piece of chrome.
 
-Colours: ink indigo `#1C2333` ground, parchment `#E8DCC4` type, oxblood `#7A2E2E`
-primary, verdigris `#5C7A6B` secondary, paper `#F2ECD9` cards. Fraunces for
-headers, Source Serif 4 for body and scripture, IBM Plex Mono for references,
-labels and all UI chrome.
+The reference stamp is the whole visual idea: a dark badge with light monospace type,
+the way a call number sits on a spine. It looks the same on a result card, in a
+sheet, in the reader header, and on the pager buttons, and once you've read a few
+screens you stop reading the words around it and just look for the stamp. Cards are
+paper with an oxblood spine down the left. Verdigris marks the secondary track:
+topics, notes, cross-references.
 
-Every reference renders as a call-number stamp — dark badge, light monospace type
-— on cards, in sheets, in the reader header, in the pager. Result cards are paper
-with an oxblood left spine; verdigris marks the secondary track (topics, notes,
-cross-refs). Mobile-first, bottom tab bar: Search / Topics / Read / Notes.
+Built mobile first, four tabs along the bottom, and the tab strip stays under the
+text column on a wide screen instead of drifting to the corners.
 
-Fonts are bundled into `web/dist`, so nothing loads from Google's CDN.
+> The static HTML mockup mentioned in the brief never made it into the session, so
+> all of the above comes from the written spec. Send the file and matching the rest
+> is one pass through `web/src/styles.css`.
 
-> Heads up: the static HTML mockup mentioned in the brief never arrived in this
-> session — no attachment came through. The visual system above is built from the
-> written spec (colours, type, stamps, cards, tab bar). If you send the mockup,
-> matching the remaining details is a small pass over `web/src/styles.css`.
+## On the homelab
 
-## Running it on the homelab
-
-`make serve` binds `0.0.0.0:8000` so it is reachable over Tailscale. It has no
-auth by design — keep it on the tailnet, not on a public interface.
+`make serve` binds every interface so Tailscale can reach it. There's no auth, by
+design, which makes the tailnet the security boundary. Keep it off anything public.
 
 ```ini
 # /etc/systemd/system/concordance.service
@@ -153,20 +188,21 @@ User=you
 WantedBy=multi-user.target
 ```
 
-For development, `make dev` runs the API on 8000 and Vite with hot reload on
-5173, proxying `/api` across.
-
 ## Tests
 
 ```
-make test     # 34 tests
+make test
 ```
 
-Parsing rules (book codes, Nave's reference grammar, call numbers, FTS query
-building) and the full API against a scratch copy of the real database.
+34 of them. Half cover the parsing rules that are cheap to break and expensive to
+notice: book codes, the Nave's citation grammar (an implied book carrying across
+`1CH 6:3; 23:13`, whole-chapter refs, numbers in prose that aren't references),
+call numbers, and FTS query building against hostile input. The other
+half drive every endpoint against a scratch copy of the real database.
 
-## Not in v1
+## What it doesn't do
 
-Commentaries, Strong's and original languages, cloud sync, multi-user, reading
-plans. Song of Solomon has no entries in the Nave's dataset used here, so it
-appears in search and reading but not under any topic.
+No commentaries, no Strong's or original languages, no cloud sync, no second user,
+no reading plans. Song of Solomon has no entries in this Nave's dataset, so it turns
+up in search and reading but under no topic. Cross-references come from topical
+co-occurrence and will sometimes hand you something sideways.
