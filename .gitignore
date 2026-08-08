@@ -1,0 +1,14 @@
+# Generated data: rebuild with `make setup` (sources are ~26 MB, db ~40 MB)
+data/sources/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+web/dist/

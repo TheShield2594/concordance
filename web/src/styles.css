@@ -1,0 +1,698 @@
+/* Concordance design system.
+   Ink indigo shell, parchment type, paper cards with an oxblood spine, and
+   monospace "call number" stamps for every reference. */
+
+:root {
+  --ink: #1c2333;
+  --ink-raised: #232c42;
+  --ink-sunken: #161c2a;
+  --parchment: #e8dcc4;
+  --parchment-dim: #a9a293;
+  --oxblood: #7a2e2e;
+  --oxblood-bright: #9c3c3c;
+  --verdigris: #5c7a6b;
+  --verdigris-bright: #79a08c;
+  --paper: #f2ecd9;
+
+  --rule: rgba(232, 220, 196, 0.14);
+  --rule-strong: rgba(232, 220, 196, 0.28);
+  --ink-on-paper: #241c17;
+  --ink-on-paper-dim: #6b5f52;
+
+  --serif: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, serif;
+  --display: 'Fraunces Variable', 'Fraunces', Georgia, serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --tab-h: 4.25rem;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --radius: 3px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--parchment);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- shell */
+
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom));
+}
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.85rem 1rem 0.7rem;
+}
+
+.masthead__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.masthead h1 {
+  font-family: var(--display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.masthead__sub {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+}
+
+.view {
+  flex: 1;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ------------------------------------------------------ call numbers */
+
+/* The signature element: every reference is a dark stamp with light type,
+   the same on paper cards and on the ink shell. */
+.callno {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  line-height: 1.35;
+  padding: 0.22em 0.45em;
+  border-radius: 2px;
+  background: var(--ink);
+  color: var(--parchment);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.callno--onink {
+  border-color: var(--rule-strong);
+  background: var(--ink-sunken);
+}
+
+.callno--button {
+  cursor: pointer;
+}
+
+.callno--button:hover {
+  background: var(--oxblood);
+}
+
+.callno--lg {
+  font-size: 0.78rem;
+  padding: 0.3em 0.55em;
+}
+
+/* --------------------------------------------------------------- tags */
+
+.tag {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-on-paper-dim);
+}
+
+.tag--onink {
+  color: var(--parchment-dim);
+}
+
+.tag--count {
+  color: var(--verdigris);
+}
+
+/* -------------------------------------------------------------- input */
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--ink-sunken);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.7rem;
+}
+
+.field:focus-within {
+  border-color: var(--verdigris);
+}
+
+.field input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  font-family: var(--serif);
+  font-size: 1rem;
+}
+
+.field input::placeholder {
+  color: var(--parchment-dim);
+}
+
+/* The browser's own clear button for type=search duplicates ours, in a colour
+   from outside the palette. */
+.field input[type='search']::-webkit-search-cancel-button,
+.field input[type='search']::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.field__glyph {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--verdigris);
+}
+
+.field__clear {
+  background: none;
+  border: 0;
+  color: var(--parchment-dim);
+  font-family: var(--mono);
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+
+/* -------------------------------------------------------------- chips */
+
+.chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  color: var(--parchment-dim);
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--parchment);
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--oxblood);
+  border-color: var(--oxblood);
+  color: var(--paper);
+}
+
+/* -------------------------------------------------------------- cards */
+
+.card {
+  background: var(--paper);
+  color: var(--ink-on-paper);
+  border-left: 3px solid var(--oxblood);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: var(--shadow-card);
+  padding: 0.8rem 0.9rem;
+}
+
+.card--verdigris {
+  border-left-color: var(--verdigris);
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.45rem;
+}
+
+.card__text {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+
+.card__text mark {
+  background: rgba(92, 122, 107, 0.28);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.08em;
+  box-shadow: inset 0 -1px 0 rgba(92, 122, 107, 0.65);
+}
+
+.card__actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(36, 28, 23, 0.12);
+}
+
+.action {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--oxblood);
+  cursor: pointer;
+}
+
+.action:hover {
+  text-decoration: underline;
+}
+
+.action--verdigris {
+  color: var(--verdigris);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+/* ------------------------------------------------------------ section */
+
+.section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.7rem;
+}
+
+.section__title {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+}
+
+/* ---------------------------------------------------------- topic row */
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--verdigris);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.row:hover {
+  border-color: var(--verdigris);
+  border-left-color: var(--verdigris-bright);
+}
+
+.row__name {
+  font-family: var(--display);
+  font-size: 0.98rem;
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------ reading */
+
+.reader {
+  background: var(--paper);
+  color: var(--ink-on-paper);
+  border-radius: var(--radius);
+  padding: 1.1rem 1rem 1.4rem;
+  box-shadow: var(--shadow-card);
+}
+
+.reader h2 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1.5rem;
+  margin: 0 0 0.1rem;
+}
+
+.reader__verse {
+  margin: 0 0 0.55rem;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.reader__verse:hover {
+  background: rgba(92, 122, 107, 0.12);
+}
+
+.reader__verse[data-active='true'] {
+  background: rgba(122, 46, 46, 0.12);
+  box-shadow: -0.5rem 0 0 rgba(122, 46, 46, 0.12);
+}
+
+.reader__num {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  vertical-align: 0.35em;
+  color: var(--oxblood);
+  margin-right: 0.35rem;
+  user-select: none;
+}
+
+.reader__note-dot {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--verdigris);
+  margin-left: 0.35rem;
+  vertical-align: 0.25em;
+}
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+/* --------------------------------------------------------------- grid */
+
+.grid {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.grid--books {
+  grid-template-columns: repeat(auto-fill, minmax(5.6rem, 1fr));
+}
+
+.grid--chapters {
+  grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr));
+}
+
+.tile {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 0.35rem;
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  color: var(--parchment);
+  cursor: pointer;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile:hover,
+.tile[aria-pressed='true'] {
+  background: var(--oxblood);
+  border-color: var(--oxblood);
+}
+
+.tile__name {
+  display: block;
+  font-family: var(--serif);
+  font-size: 0.72rem;
+  color: var(--parchment-dim);
+  letter-spacing: 0;
+}
+
+.tile:hover .tile__name,
+.tile[aria-pressed='true'] .tile__name {
+  color: var(--paper);
+}
+
+/* -------------------------------------------------------------- sheet */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 15, 24, 0.72);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 40;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 46rem;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--ink);
+  border-top: 3px solid var(--oxblood);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 1rem 1rem calc(1.2rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.sheet__title {
+  font-family: var(--display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.sheet textarea {
+  width: 100%;
+  min-height: 8.5rem;
+  resize: vertical;
+  background: var(--paper);
+  color: var(--ink-on-paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 0.7rem;
+  font-family: var(--serif);
+  font-size: 1rem;
+  outline: none;
+}
+
+.sheet textarea:focus {
+  border-color: var(--verdigris);
+}
+
+.btn {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  color: var(--parchment);
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--parchment-dim);
+}
+
+.btn--primary {
+  background: var(--oxblood);
+  border-color: var(--oxblood);
+  color: var(--paper);
+}
+
+.btn--primary:hover {
+  background: var(--oxblood-bright);
+}
+
+.btn--danger {
+  color: var(--oxblood-bright);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-row {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* ---------------------------------------------------------- tab bar */
+
+.tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  background: var(--ink-sunken);
+  border-top: 1px solid var(--rule-strong);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Tabs track the column width rather than the viewport, so on a wide screen
+   they stay under the text instead of drifting to the corners. */
+.tabs__inner {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  width: 100%;
+  max-width: 46rem;
+}
+
+.tab {
+  background: none;
+  border: 0;
+  border-top: 2px solid transparent;
+  padding: 0.7rem 0.25rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  color: var(--parchment-dim);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.tab[aria-current='page'] {
+  color: var(--parchment);
+  border-top-color: var(--oxblood);
+}
+
+.tab__glyph {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+/* --------------------------------------------------------- utilities */
+
+.muted {
+  color: var(--parchment-dim);
+}
+
+.empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--parchment-dim);
+}
+
+.empty__mark {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.note-body {
+  white-space: pre-wrap;
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.quote {
+  font-size: 0.92rem;
+  color: var(--ink-on-paper-dim);
+  border-left: 2px solid rgba(36, 28, 23, 0.18);
+  padding-left: 0.6rem;
+  margin: 0.5rem 0 0;
+}
+
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--verdigris-bright);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.spinner {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+@media (min-width: 40rem) {
+  .view {
+    padding: 1.25rem;
+  }
+}
