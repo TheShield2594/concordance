@@ -1,0 +1,5 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+# uvicorn pulls h11 in; anything below 0.16 mishandles chunked
+# request bodies (CVE-2025-43859).
+h11>=0.16
