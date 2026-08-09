@@ -56,14 +56,20 @@ def build_match(query: str, prefix_last: bool = True, stem: bool = True) -> str 
     return " AND ".join(parts)
 
 
+_MARKED = re.compile(
+    f"({re.escape(MARK_OPEN)}.*?{re.escape(MARK_CLOSE)})", re.DOTALL
+)
+
+
 def split_marks(text: str) -> list[dict]:
     """Turn marker-delimited text into [{text, hit}] segments for the client."""
     segments: list[dict] = []
-    for chunk in re.split(f"({MARK_OPEN}[^{MARK_CLOSE}]*{MARK_CLOSE})", text):
+    for chunk in _MARKED.split(text):
         if not chunk:
             continue
         if chunk.startswith(MARK_OPEN):
-            segments.append({"text": chunk[1:-1], "hit": True})
+            body = chunk[len(MARK_OPEN) : -len(MARK_CLOSE)]
+            segments.append({"text": body, "hit": True})
         else:
             segments.append({"text": chunk, "hit": False})
     return segments

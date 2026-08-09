@@ -221,7 +221,35 @@ def load_naves(path: Path, valid: dict[tuple[str, int], int]):
 # build
 # --------------------------------------------------------------------------
 
+NOTE_COLUMNS = (
+    "id, verse_ref, book, chapter, verse, translation, body, created_at, updated_at"
+)
+
+
+def rescue_notes(db_path: Path) -> list[tuple]:
+    """Read personal notes out of the database that is about to be replaced.
+
+    Scripture can always be rebuilt from the sources; notes cannot. Opening the
+    database properly (rather than copying the file) also picks up anything
+    still sitting in the WAL.
+    """
+    if not db_path.exists():
+        return []
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute("SELECT 1 FROM notes LIMIT 1")
+        return con.execute(f"SELECT {NOTE_COLUMNS} FROM notes ORDER BY id").fetchall()
+    except sqlite3.DatabaseError:
+        return []  # older or corrupt file with no notes table
+    finally:
+        con.close()
+
+
 def build(db_path: Path) -> None:
+    saved_notes = rescue_notes(db_path)
+    if saved_notes:
+        print(f"holding on to {len(saved_notes):,} note(s) across the rebuild")
+
     if db_path.exists():
         db_path.unlink()
     for suffix in ("-wal", "-shm"):
@@ -311,6 +339,14 @@ def build(db_path: Path) -> None:
     n_topics = con.execute("SELECT count(*) FROM topics").fetchone()[0]
     n_refs = con.execute("SELECT count(*) FROM topic_verses").fetchone()[0]
     print(f"  {n_topics:,} topics, {n_refs:,} references")
+
+    if saved_notes:
+        placeholders = ",".join("?" * len(saved_notes[0]))
+        con.executemany(
+            f"INSERT INTO notes({NOTE_COLUMNS}) VALUES ({placeholders})", saved_notes
+        )
+        kept = con.execute("SELECT count(*) FROM notes").fetchone()[0]
+        print(f"  restored {kept:,} note(s)")
 
     con.commit()
     con.execute("PRAGMA optimize")

@@ -28,7 +28,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Display order for the filter chips. Which codes are *valid* comes from the
+# translations table, so adding a translation to the ETL is enough; this list
+# only decides the order they appear in.
 TRANSLATION_CHIPS = ["ALL", "KJV", "ASV", "WEB", "BSB"]
+
+_valid_translations: set[str] | None = None
+
+
+def valid_translations(con: sqlite3.Connection) -> set[str]:
+    """The translation codes the database holds, read once and kept."""
+    global _valid_translations
+    if _valid_translations is None:
+        _valid_translations = {
+            r["code"] for r in con.execute("SELECT code FROM translations")
+        }
+    return _valid_translations
+
+
+def chip_order(con: sqlite3.Connection) -> list[str]:
+    codes = valid_translations(con)
+    known = [c for c in TRANSLATION_CHIPS if c == "ALL" or c in codes]
+    return known + sorted(codes - set(TRANSLATION_CHIPS))
 
 
 def get_db():
@@ -61,9 +82,9 @@ def verse_row(row: sqlite3.Row, marked: bool = False) -> dict:
     return out
 
 
-def check_translation(translation: str) -> str:
+def check_translation(con: sqlite3.Connection, translation: str) -> str:
     t = (translation or "ALL").upper()
-    if t not in TRANSLATION_CHIPS:
+    if t != "ALL" and t not in valid_translations(con):
         raise HTTPException(400, f"unknown translation {translation!r}")
     return t
 
@@ -76,7 +97,7 @@ def check_translation(translation: str) -> str:
 def meta(con: sqlite3.Connection = Depends(get_db)):
     """Translations, books and chapter counts -- everything the UI needs up front."""
     translations = [dict(r) for r in con.execute("SELECT * FROM translations")]
-    order = {t: i for i, t in enumerate(TRANSLATION_CHIPS)}
+    order = {t: i for i, t in enumerate(chip_order(con))}
     translations.sort(key=lambda t: order.get(t["code"], 99))
 
     books = [
@@ -101,7 +122,7 @@ def meta(con: sqlite3.Connection = Depends(get_db)):
     }
     return {
         "translations": translations,
-        "translation_chips": TRANSLATION_CHIPS,
+        "translation_chips": chip_order(con),
         "books": [b for b in books if b["chapters"]],
         "verse_counts": counts,
         "topic_count": con.execute("SELECT count(*) FROM topics").fetchone()[0],
@@ -123,7 +144,7 @@ def api_search(
     con: sqlite3.Connection = Depends(get_db),
 ):
     """Full-text search over verses, Nave's topic names and personal notes."""
-    translation = check_translation(translation)
+    translation = check_translation(con, translation)
     match = search.build_match(q)
     wanted = {p.strip() for p in include.split(",")}
     empty = {
@@ -193,7 +214,9 @@ def api_search(
     return result
 
 
-def topic_matches(con: sqlite3.Connection, q: str, limit: int) -> list[dict]:
+def topic_matches(
+    con: sqlite3.Connection, q: str, limit: int, offset: int = 0
+) -> list[dict]:
     """Nave's topics whose *name* matches, with how many references each holds.
 
     Two ways in: the (unstemmed) FTS index for word and prefix hits, and a plain
@@ -216,8 +239,8 @@ def topic_matches(con: sqlite3.Connection, q: str, limit: int) -> list[dict]:
                     (lower(t.name) LIKE lower(?) || '%') DESC,
                     length(t.name),
                     ref_count DESC
-           LIMIT ?""",
-        [match, f"%{needle}%", needle, needle, limit],
+           LIMIT ? OFFSET ?""",
+        [match, f"%{needle}%", needle, needle, limit, offset],
     )
     return [
         {
@@ -242,7 +265,10 @@ def list_topics(
     con: sqlite3.Connection = Depends(get_db),
 ):
     if q.strip():
-        return {"topics": topic_matches(con, q, limit=limit), "query": q}
+        return {
+            "topics": topic_matches(con, q, limit=limit, offset=offset),
+            "query": q,
+        }
     rows = con.execute(
         """SELECT t.id, t.name, t.section,
                   (SELECT count(*) FROM topic_verses tv WHERE tv.topic_id = t.id)
@@ -262,7 +288,7 @@ def get_topic(
     con: sqlite3.Connection = Depends(get_db),
 ):
     """A topic with every reference Nave's files under it, verse text attached."""
-    translation = check_translation(translation)
+    translation = check_translation(con, translation)
     if translation == "ALL":
         translation = "KJV"
     topic = con.execute("SELECT * FROM topics WHERE id = ?", [topic_id]).fetchone()
@@ -326,7 +352,7 @@ def get_chapter(
     translation: str = Query("KJV"),
     con: sqlite3.Connection = Depends(get_db),
 ):
-    translation = check_translation(translation)
+    translation = check_translation(con, translation)
     if translation == "ALL":
         translation = "KJV"
     book = book.upper()
@@ -415,7 +441,7 @@ def get_verse(
     con: sqlite3.Connection = Depends(get_db),
 ):
     """One verse in one or every translation -- used by the note editor."""
-    translation = check_translation(translation)
+    translation = check_translation(con, translation)
     parsed = refs.parse(ref)
     if parsed is None or not parsed.verse_start:
         raise HTTPException(400, "expected a reference like PHP.4.6")
@@ -427,7 +453,7 @@ def get_verse(
     if translation != "ALL":
         sql += " AND v.translation = ?"
         params.append(translation)
-    rows = con.execute(sql + " ORDER BY v.verse", params).fetchall()
+    rows = con.execute(sql + " ORDER BY v.verse, v.translation", params).fetchall()
     if not rows:
         raise HTTPException(404, "verse not found")
     return {
@@ -448,7 +474,7 @@ def cross_refs(
     There is no separate cross-reference dataset in v1: two verses are related
     when Nave's puts them under the same topic.
     """
-    translation = check_translation(translation)
+    translation = check_translation(con, translation)
     if translation == "ALL":
         translation = "KJV"
     parsed = refs.parse(ref)
@@ -483,7 +509,8 @@ def cross_refs(
                JOIN books b ON b.code = tv.book
                WHERE tv.topic_id = ?
                  AND NOT (tv.book = ? AND tv.chapter = ?
-                          AND tv.verse_start <= ? AND tv.verse_end >= ?)
+                          AND (tv.verse_start = 0
+                               OR (? BETWEEN tv.verse_start AND tv.verse_end)))
                ORDER BY tv.seq
                LIMIT 6""",
             [
@@ -491,7 +518,6 @@ def cross_refs(
                 t["id"],
                 parsed.book,
                 parsed.chapter,
-                parsed.verse_start,
                 parsed.verse_start,
             ],
         ).fetchall()
@@ -555,7 +581,8 @@ def note_row(r: sqlite3.Row, marked: bool = False) -> dict:
     )
     if marked:
         out["segments"] = search.split_marks(body)
-    if "verse_text" in r.keys():
+    # sqlite3.Row membership tests values, not column names, so .keys() stays.
+    if "verse_text" in r.keys():  # noqa: SIM118
         out["verse_text"] = r["verse_text"]
     return out
 
@@ -608,6 +635,13 @@ def create_note(note: NoteIn, con: sqlite3.Connection = Depends(get_db)):
         raise HTTPException(400, "expected a reference like PHP.4.6")
     if not note.body.strip():
         raise HTTPException(400, "note body is empty")
+    # A note remembers which translation was on screen; storing a code that is
+    # not in the database would leave it with no verse text to show.
+    translation = note.translation
+    if translation is not None:
+        translation = check_translation(con, translation)
+        if translation == "ALL":
+            raise HTTPException(400, "a note records one translation, not ALL")
     exists = con.execute(
         "SELECT 1 FROM verses WHERE book = ? AND chapter = ? AND verse = ?",
         [parsed.book, parsed.chapter, parsed.verse_start],
@@ -623,7 +657,7 @@ def create_note(note: NoteIn, con: sqlite3.Connection = Depends(get_db)):
             parsed.book,
             parsed.chapter,
             parsed.verse_start,
-            note.translation,
+            translation,
             note.body.strip(),
         ],
     )
@@ -659,8 +693,15 @@ def delete_note(note_id: int, con: sqlite3.Connection = Depends(get_db)):
 
 @app.get("/api/health")
 def health(con: sqlite3.Connection = Depends(get_db)):
+    """Liveness only. Cheap enough to poll every few seconds."""
+    con.execute("SELECT 1").fetchone()
+    return {"ok": True}
+
+
+@app.get("/api/stats")
+def stats(con: sqlite3.Connection = Depends(get_db)):
+    """Row counts. Scans three tables, so it is not the thing to poll."""
     return {
-        "ok": True,
         "verses": con.execute("SELECT count(*) FROM verses").fetchone()[0],
         "topics": con.execute("SELECT count(*) FROM topics").fetchone()[0],
         "notes": con.execute("SELECT count(*) FROM notes").fetchone()[0],
@@ -671,14 +712,18 @@ def health(con: sqlite3.Connection = Depends(get_db)):
 # static SPA (mounted last so /api/* wins)
 # --------------------------------------------------------------------------
 
-DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+DIST = (Path(__file__).resolve().parent.parent / "web" / "dist").resolve()
 
 if DIST.exists():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
-        candidate = DIST / path
-        if path and candidate.is_file():
+        index = DIST / "index.html"
+        if not path:
+            return FileResponse(index)
+        candidate = (DIST / path).resolve()
+        # `..` in the request must not walk out of the build directory.
+        if candidate.is_file() and candidate.is_relative_to(DIST):
             return FileResponse(candidate)
-        return FileResponse(DIST / "index.html")
+        return FileResponse(index)

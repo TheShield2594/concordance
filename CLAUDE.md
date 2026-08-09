@@ -32,12 +32,18 @@ Work on `claude/concordance-bible-app-44mnid` unless told otherwise. Push with
 make setup    # venv, download sources, build the database, build the UI
 make serve    # production: one process on 0.0.0.0:8000
 make dev      # API on 8000, Vite with hot reload on 5173
-make test     # 34 tests, run before every commit
+make test     # 37 tests, run before every commit
 make data     # rebuild data/concordance.db from the downloaded sources
 ```
 
-`make test` needs `data/concordance.db` to exist. The API tests copy it to a temp
-directory and clear the notes table, so they never touch real notes.
+`make test` needs `data/concordance.db` to exist, and fails rather than skips without
+it, so a CI run can't come back green having asserted nothing. Set
+`CONCORDANCE_ALLOW_SKIP=1` to skip instead. The API tests take a sqlite backup of the
+database and clear its notes, so they never touch real notes.
+
+**Rebuilding keeps your notes.** `etl/build_db.py` lifts them out before it replaces
+the file and puts them back after. Anything that touches that path needs to keep
+that true.
 
 ## Rules that aren't obvious from the code
 

@@ -9,7 +9,7 @@ starts up, opens a file on disk, and answers questions about it.
 
 | Search | Topics | Read |
 | :----: | :----: | :--: |
-| <img src="docs/screenshots/search.png" width="260"> | <img src="docs/screenshots/topic.png" width="260"> | <img src="docs/screenshots/read.png" width="260"> |
+| <img src="docs/screenshots/search.png" width="260" alt="Search view: results for anxious as paper cards, each stamped with its call number and translation, matched words highlighted"> | <img src="docs/screenshots/topic.png" width="260" alt="Topics view: the PRAYER topic, its references grouped under Nave's sub-headings"> | <img src="docs/screenshots/read.png" width="260" alt="Read view: Philippians 4 in the BSB, verses numbered in the margin"> |
 
 ## Getting it running
 
@@ -24,8 +24,8 @@ of it download time. Then `make serve` binds `0.0.0.0:8000` and hands out both t
 API and the UI from one process.
 
 That database file is the entire application state. Copy it somewhere safe and your
-notes are backed up. Lose it and `make data` rebuilds everything except the notes,
-which is a good argument for copying it somewhere safe.
+notes are backed up. `make data` rebuilds scripture from the sources and carries any
+notes across, but nothing brings them back if you lose the file itself.
 
 ## What's in it
 
@@ -66,7 +66,7 @@ etl/         the one-time data pipeline
   books.py           66 books, their codes, and name resolution
 server/      the API: main.py, search.py, refs.py, db.py
 web/         the SPA: views.jsx, components.jsx, sheets.jsx, styles.css
-tests/       34 tests over the parsing rules and every endpoint
+tests/       37 tests over the parsing rules and every endpoint
 ```
 
 Development is `make dev`, which puts the API on 8000 and Vite with hot reload on
@@ -94,6 +94,11 @@ carry it. It arrives as USFX XML, so `build_db.py` walks the tree and throws out
 footnote and cross-reference apparatus before anything reaches the index. Genesis 1:1
 in WEB carries a footnote about אֱלֹהִ֑ים; you'd rather not find that by searching
 for "Hebrew."
+
+Every download is pinned to a commit and checked against a SHA-256 digest before
+it lands in `data/sources`, so a rebuild years from now produces the same database
+and a source that changes underneath you fails loudly instead of quietly rewriting
+scripture.
 
 The ETL also drops references that don't resolve to a real verse. Nave's entries mix
 prose and citations on one line, and the parser occasionally reads a number out of
@@ -137,6 +142,8 @@ left alone. Notes change constantly, so triggers keep `notes_fts` honest.
 | `GET /api/verse/{ref}` | one verse in one translation or all four |
 | `GET /api/cross-refs/{ref}` | related verses by way of shared topics |
 | `GET POST PATCH DELETE /api/notes` | your notes |
+| `GET /api/health` | liveness, cheap enough to poll |
+| `GET /api/stats` | verse, topic and note counts |
 
 Interactive docs sit at `/api/docs`.
 
@@ -194,7 +201,7 @@ WantedBy=multi-user.target
 make test
 ```
 
-34 of them. Half cover the parsing rules that are cheap to break and expensive to
+37 of them. Half cover the parsing rules that are cheap to break and expensive to
 notice: book codes, the Nave's citation grammar (an implied book carrying across
 `1CH 6:3; 23:13`, whole-chapter refs, numbers in prose that aren't references),
 call numbers, and FTS query building against hostile input. The other

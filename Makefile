@@ -20,7 +20,7 @@ data:
 	$(PY) etl/build_db.py
 
 web:
-	cd web && npm install && npm run build
+	cd web && npm ci && npm run build
 
 ## production: one process serving the API and the built UI
 serve:

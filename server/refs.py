@@ -4,7 +4,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-REF_RE = re.compile(r"^\s*([1-3]?[A-Za-z]{2,3})\.(\d+)(?:\.(\d+)(?:-(\d+))?)?\s*$")
+# Digits are capped at three and restricted to ASCII: no book runs past Psalm
+# 150 or verse 176, and an unbounded \d also matches other scripts' digits and
+# integers too large for SQLite to bind.
+REF_RE = re.compile(
+    r"^\s*([1-3]?[A-Za-z]{2,3})\.([0-9]{1,3})(?:\.([0-9]{1,3})(?:-([0-9]{1,3}))?)?\s*$"
+)
 
 
 @dataclass(frozen=True)

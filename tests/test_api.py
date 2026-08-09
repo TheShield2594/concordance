@@ -1,6 +1,9 @@
 """End-to-end checks against a real (small) database built by the ETL.
 
-Skipped entirely when data/concordance.db has not been built yet.
+Needs data/concordance.db. Missing it is a failure, not a skip, so a CI job
+without the database can't come back green having asserted nothing. Set
+CONCORDANCE_ALLOW_SKIP=1 to skip instead, which is what you want locally before
+the first `make data`.
 """
 import os
 import shutil
@@ -13,19 +16,43 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from server import refs  # noqa: E402
+from server.search import MARK_OPEN  # noqa: E402
+
 SOURCE_DB = Path(os.environ.get("CONCORDANCE_DB", ROOT / "data" / "concordance.db"))
+ALLOW_SKIP = os.environ.get("CONCORDANCE_ALLOW_SKIP") not in (None, "", "0")
 
 
-@unittest.skipUnless(SOURCE_DB.exists(), f"{SOURCE_DB} not built (run: make data)")
+@unittest.skipIf(
+    ALLOW_SKIP and not SOURCE_DB.exists(),
+    f"{SOURCE_DB} not built and CONCORDANCE_ALLOW_SKIP is set",
+)
 class ApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if not SOURCE_DB.exists():
+            raise AssertionError(
+                f"{SOURCE_DB} does not exist -- run `make data` first, or set "
+                "CONCORDANCE_ALLOW_SKIP=1 to skip these tests"
+            )
         # Work on a copy so tests can write notes without touching real ones.
+        # sqlite's own backup, not a file copy: it takes the WAL along with it.
         cls.tmp = tempfile.mkdtemp()
         cls.db = Path(cls.tmp) / "test.db"
-        shutil.copy(SOURCE_DB, cls.db)
-        with sqlite3.connect(cls.db) as con:
+        source = sqlite3.connect(SOURCE_DB)
+        target = sqlite3.connect(cls.db)
+        try:
+            source.backup(target)
+        finally:
+            source.close()
+            target.close()
+
+        con = sqlite3.connect(cls.db)
+        try:
             con.execute("DELETE FROM notes")  # start from an empty notebook
+            con.commit()
+        finally:
+            con.close()
         os.environ["CONCORDANCE_DB"] = str(cls.db)
 
         from fastapi.testclient import TestClient
@@ -76,7 +103,7 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(hits)
         self.assertTrue(all("shepherd" in h for h in hits))
         # `text` stays clean -- markers are only in `segments`.
-        self.assertNotIn("", first["text"])
+        self.assertNotIn(MARK_OPEN, first["text"])
 
     def test_canonical_sort_starts_at_genesis(self):
         body = self.client.get("/api/search?q=shepherd&sort=canonical").json()
@@ -93,7 +120,8 @@ class ApiTests(unittest.TestCase):
             with self.subTest(q=q):
                 self.assertEqual(self.client.get("/api/search", params={"q": q}).status_code, 200)
         # and the table is still there
-        self.assertGreater(self.client.get("/api/health").json()["verses"], 0)
+        self.assertTrue(self.client.get("/api/health").json()["ok"])
+        self.assertGreater(self.client.get("/api/stats").json()["verses"], 0)
 
     def test_unknown_translation_is_rejected(self):
         self.assertEqual(self.client.get("/api/search?q=a&translation=NIV").status_code, 400)
@@ -129,8 +157,20 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(body["topics"])
         for group in body["topics"]:
             self.assertTrue(group["refs"])
-            # the verse itself is never listed as its own cross-reference
-            self.assertNotIn("PHP.4.6", [r["ref"] for r in group["refs"]])
+            for ref in group["refs"]:
+                # nothing covering the verse itself, including the whole-chapter
+                # form PHP.4, which is not a cross-reference but a self-reference
+                parsed = refs.parse(ref["ref"])
+                self.assertIsNotNone(parsed, ref["ref"])
+                covers = (
+                    parsed.book == "PHP"
+                    and parsed.chapter == 4
+                    and (
+                        parsed.verse_start == 0
+                        or parsed.verse_start <= 6 <= parsed.verse_end
+                    )
+                )
+                self.assertFalse(covers, f"{ref['ref']} covers PHP.4.6")
 
     # -------------------------------------------------------------- notes
 
@@ -159,6 +199,25 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/notes").json()["notes"], [])
         self.assertEqual(self.client.delete(f"/api/notes/{note['id']}").status_code, 404)
 
+    def test_note_with_an_unknown_translation_is_refused(self):
+        for translation in ("NIV", "ALL"):
+            r = self.client.post(
+                "/api/notes",
+                json={"verse_ref": "PHP.4.6", "body": "x", "translation": translation},
+            )
+            self.assertEqual(r.status_code, 400, translation)
+
+    def test_oversized_reference_is_a_bad_request(self):
+        r = self.client.get("/api/verse/PHP.99999999999999999999.1")
+        self.assertEqual(r.status_code, 400)
+
+    def test_spa_route_cannot_walk_out_of_the_build(self):
+        if not (ROOT / "web" / "dist" / "index.html").exists():
+            self.skipTest("web/dist not built")
+        r = self.client.get("/../../etc/passwd")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn("root:", r.text)
+
     def test_note_on_a_nonexistent_verse_is_refused(self):
         r = self.client.post("/api/notes", json={"verse_ref": "PHP.99.1", "body": "x"})
         self.assertEqual(r.status_code, 404)
@@ -167,8 +226,13 @@ class ApiTests(unittest.TestCase):
 
     def test_notes_survive_a_database_reopen(self):
         self.client.post("/api/notes", json={"verse_ref": "PSA.23.1", "body": "kept"})
-        with sqlite3.connect(self.db) as con:
-            rows = con.execute("SELECT body FROM notes WHERE verse_ref = 'PSA.23.1'").fetchall()
+        con = sqlite3.connect(self.db)
+        try:
+            rows = con.execute(
+                "SELECT body FROM notes WHERE verse_ref = 'PSA.23.1'"
+            ).fetchall()
+        finally:
+            con.close()
         self.assertEqual(rows, [("kept",)])
 
 

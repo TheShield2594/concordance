@@ -13,6 +13,7 @@ import {
   TopicRow,
   VerseCard,
 } from './components.jsx'
+import { formatDate } from './format.js'
 import { useAsync, useDebounced } from './hooks.js'
 
 const PAGE = 25
@@ -24,15 +25,17 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
   const query = useDebounced(q, 200)
   const [extra, setExtra] = useState([])
   const [loadingMore, setLoadingMore] = useState(false)
+  const [moreError, setMoreError] = useState(null)
   // Best match first, or straight through Genesis to Revelation.
   const [sort, setSort] = useState('relevance')
 
-  // Keep the URL in step so a reload returns to the same search.
+  // Keep the URL in step so a reload, or a trip through another tab, returns
+  // to the same search. Goes through navigate so the route state stays true.
   useEffect(() => {
-    const target = query ? `#/search?q=${encodeURIComponent(query)}` : '#/search'
-    if (window.location.hash !== target)
-      window.history.replaceState(null, '', target)
-  }, [query])
+    navigate(query ? `search?q=${encodeURIComponent(query)}` : 'search', {
+      replace: true,
+    })
+  }, [query, navigate])
 
   const { data, error, loading } = useAsync(
     () => api.search({ q: query, translation, limit: PAGE, sort }),
@@ -47,6 +50,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
 
   const loadMore = async () => {
     setLoadingMore(true)
+    setMoreError(null)
     try {
       const next = await api.search({
         q: query,
@@ -57,6 +61,8 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         sort,
       })
       setExtra((rows) => [...rows, ...next.verses])
+    } catch (e) {
+      setMoreError(e)
     } finally {
       setLoadingMore(false)
     }
@@ -160,6 +166,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
                   onCrossRefs={(v) => actions.crossRefs(v.ref)}
                 />
               ))}
+              <ErrorNote error={moreError} />
               {more && (
                 <button
                   type="button"
@@ -437,7 +444,15 @@ function Chapter({
               <p
                 key={verse.verse}
                 className="reader__verse"
+                role="button"
+                tabIndex={0}
                 onClick={() => actions.note(verse.ref, data.translation)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    actions.note(verse.ref, data.translation)
+                  }
+                }}
                 title="Add or read notes on this verse"
               >
                 <span className="reader__num">{verse.verse}</span>
@@ -497,7 +512,7 @@ export function NotesView({ navigate, actions, notesVersion }) {
       {loading && <Spinner label="Reading" />}
       <ErrorNote error={error} />
 
-      {!loading && notes.length === 0 && (
+      {!loading && !error && notes.length === 0 && (
         <Empty mark={query ? 'No notes' : 'Nothing yet'}>
           <p>
             {query
@@ -516,7 +531,7 @@ export function NotesView({ navigate, actions, notesVersion }) {
               </CallNumber>
               <span className="tag">{note.label}</span>
               <span className="tag" style={{ marginLeft: 'auto' }}>
-                {note.updated_at.slice(0, 10)}
+                {formatDate(note.updated_at)}
               </span>
             </div>
             <p className="note-body">{note.body}</p>

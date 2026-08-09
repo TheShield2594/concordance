@@ -1,5 +1,17 @@
 const BASE = '/api'
 
+/** FastAPI sends `detail` as a string, or as a list of objects for a 422. */
+function describe(detail) {
+  if (!detail) return ''
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail))
+    return detail
+      .map((d) => (typeof d === 'string' ? d : [d.loc?.join('.'), d.msg].filter(Boolean).join(': ')))
+      .filter(Boolean)
+      .join('; ')
+  return detail.msg || JSON.stringify(detail)
+}
+
 async function request(path, options) {
   const res = await fetch(BASE + path, {
     headers: { 'content-type': 'application/json' },
@@ -8,7 +20,7 @@ async function request(path, options) {
   if (!res.ok) {
     let detail = res.statusText
     try {
-      detail = (await res.json()).detail || detail
+      detail = describe((await res.json()).detail) || detail
     } catch {
       /* non-JSON error body */
     }
@@ -16,6 +28,9 @@ async function request(path, options) {
   }
   return res.status === 204 ? null : res.json()
 }
+
+/** Path segments get encoded so a stray `/` or `?` can't redraw the URL. */
+const enc = (value) => encodeURIComponent(String(value))
 
 const qs = (params) =>
   Object.entries(params)
@@ -32,15 +47,16 @@ export const api = {
   topics: ({ q = '', limit = 60, offset = 0 } = {}) =>
     request(`/topics?${qs({ q, limit, offset })}`),
 
-  topic: (id, translation) => request(`/topics/${id}?${qs({ translation })}`),
+  topic: (id, translation) =>
+    request(`/topics/${enc(id)}?${qs({ translation })}`),
 
   chapter: (book, chapter, translation) =>
-    request(`/chapter/${book}/${chapter}?${qs({ translation })}`),
+    request(`/chapter/${enc(book)}/${enc(chapter)}?${qs({ translation })}`),
 
-  verse: (ref, translation) => request(`/verse/${ref}?${qs({ translation })}`),
+  verse: (ref, translation) => request(`/verse/${enc(ref)}?${qs({ translation })}`),
 
   crossRefs: (ref, translation) =>
-    request(`/cross-refs/${ref}?${qs({ translation })}`),
+    request(`/cross-refs/${enc(ref)}?${qs({ translation })}`),
 
   notes: ({ q = '', ref = '' } = {}) => request(`/notes?${qs({ q, ref })}`),
 

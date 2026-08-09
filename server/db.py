@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,13 +25,3 @@ def connect() -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA busy_timeout = 5000")
     return con
-
-
-@contextmanager
-def cursor():
-    con = connect()
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()

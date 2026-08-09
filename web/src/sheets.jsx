@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { api } from './api.js'
 import { CallNumber, ErrorNote, Sheet, Spinner } from './components.jsx'
+import { formatDateTime } from './format.js'
 import { useAsync } from './hooks.js'
 
 /** Attach or edit notes on a verse. */
@@ -40,7 +41,9 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
   }
 
   const remove = async (id) => {
+    if (!window.confirm('Delete this note? It cannot be recovered.')) return
     setBusy(true)
+    setError(null)
     try {
       await api.deleteNote(id)
       if (editing?.id === id) setEditing(null)
@@ -62,6 +65,8 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
       onClose={onClose}
     >
       {text && <p className="quote">{text}</p>}
+      <ErrorNote error={verse.error} />
+      <ErrorNote error={notes.error} />
 
       <textarea
         value={editing ? editing.body : draft}
@@ -95,14 +100,16 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
         </button>
       </div>
 
-      {existing.length > 0 && (
+      {notes.loading && <Spinner label="Reading notes" />}
+
+      {!notes.loading && existing.length > 0 && (
         <div className="stack">
           {existing.map((note) => (
             <article key={note.id} className="card card--verdigris">
               <div className="card__head">
                 <CallNumber>{note.verse_ref}</CallNumber>
                 <span className="tag" style={{ marginLeft: 'auto' }}>
-                  {note.updated_at.slice(0, 16).replace('T', ' ')}
+                  {formatDateTime(note.updated_at)}
                 </span>
               </div>
               <p className="note-body">{note.body}</p>
@@ -137,14 +144,11 @@ export function CrossRefSheet({ verseRef, translation, onClose, onRead, onTopic 
     () => api.crossRefs(verseRef, translation),
     [verseRef, translation],
   )
-  const [label, setLabel] = useState(verseRef)
-
-  useEffect(() => {
-    api
-      .verse(verseRef, translation)
-      .then((v) => setLabel(v.label))
-      .catch(() => setLabel(verseRef))
-  }, [verseRef, translation])
+  const heading = useAsync(
+    () => api.verse(verseRef, translation).then((v) => v.label),
+    [verseRef, translation],
+  )
+  const label = heading.data ?? verseRef
 
   return (
     <Sheet title="Cross-references" subtitle={`${verseRef} · ${label}`} onClose={onClose}>

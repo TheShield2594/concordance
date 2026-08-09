@@ -1,1 +1,2 @@
+-r requirements.txt
 httpx>=0.27

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api } from './api.js'
 import { ErrorNote, Spinner } from './components.jsx'
@@ -41,6 +41,16 @@ export default function App() {
     crossRefs: useCallback((ref) => setCrossSheet({ ref }), []),
   }
 
+  // Coming back to the Search tab should land on the search you left, not an
+  // empty box, so remember where that tab was.
+  const lastSearch = useRef('search')
+  useEffect(() => {
+    if (route.tab === 'search')
+      lastSearch.current = route.query.q
+        ? `search?q=${encodeURIComponent(route.query.q)}`
+        : 'search'
+  }, [route])
+
   const chips = meta.data?.translation_chips ?? ['ALL', 'KJV', 'ASV', 'WEB', 'BSB']
   const readable = translation === 'ALL' ? 'KJV' : translation
 
@@ -79,7 +89,9 @@ export default function App() {
               type="button"
               className="tab"
               aria-current={route.tab === tab.id ? 'page' : undefined}
-              onClick={() => navigate(tab.id)}
+              onClick={() =>
+                navigate(tab.id === 'search' ? lastSearch.current : tab.id)
+              }
             >
               <span className="tab__glyph" aria-hidden="true">
                 {tab.glyph}

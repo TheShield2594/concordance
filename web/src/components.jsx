@@ -168,15 +168,46 @@ export function TopicRow({ topic, onOpen }) {
   )
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+
 /** Bottom sheet used for the note editor and cross-references. */
 export function Sheet({ title, subtitle, onClose, children }) {
+  const panel = useRef(null)
+
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose()
+    const opener = document.activeElement
+    panel.current?.focus()
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab' || !panel.current) return
+      // Keep Tab inside the sheet while it is open.
+      const stops = [...panel.current.querySelectorAll(FOCUSABLE)].filter(
+        (el) => el.offsetParent !== null,
+      )
+      if (!stops.length) return
+      const first = stops[0]
+      const last = stops[stops.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || active === panel.current)) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+
     window.addEventListener('keydown', onKey)
     document.body.style.overflow = 'hidden'
     return () => {
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = ''
+      if (opener instanceof HTMLElement) opener.focus()
     }
   }, [onClose])
 
@@ -188,7 +219,7 @@ export function Sheet({ title, subtitle, onClose, children }) {
       aria-modal="true"
       aria-label={title}
     >
-      <div className="sheet">
+      <div className="sheet" ref={panel} tabIndex={-1}>
         <div className="sheet__head">
           <div>
             <h2 className="sheet__title">{title}</h2>

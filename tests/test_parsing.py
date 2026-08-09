@@ -67,7 +67,17 @@ class CallNumbers(unittest.TestCase):
             self.assertEqual(str(refs.parse(text)), text)
 
     def test_rejects_junk(self):
-        for text in ("", "PHP", "PHP.4.6.5", "../../etc/passwd", "PHP.four.6"):
+        for text in (
+            "",
+            "PHP",
+            "PHP.4.6.5",
+            "../../etc/passwd",
+            "PHP.four.6",
+            # too many digits to be a chapter, and too large for SQLite to bind
+            "PHP.99999999999999999999.1",
+            "PHP.1234.1",
+            "PHP.٤.٦",  # Arabic-Indic digits are not references
+        ):
             self.assertIsNone(refs.parse(text), text)
 
     def test_labels(self):

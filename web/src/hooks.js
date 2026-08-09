@@ -49,11 +49,13 @@ export function useAsync(fn, deps, { skip = false } = {}) {
   const latest = useRef(0)
 
   useEffect(() => {
+    // Claim a ticket first, so anything already in flight is invalidated even
+    // when this run bails out at the skip check.
+    const ticket = ++latest.current
     if (skip) {
       setState({ data: null, error: null, loading: false })
       return
     }
-    const ticket = ++latest.current
     setState((s) => ({ ...s, loading: true, error: null }))
     fn()
       .then((data) => {

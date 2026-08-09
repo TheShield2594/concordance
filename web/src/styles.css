@@ -181,6 +181,15 @@ select {
   border-color: var(--verdigris);
 }
 
+/* Keyboard users need to see where they are. Verdigris-bright against both the
+   sunken ink field and the paper textarea clears 3:1. */
+.field input:focus-visible,
+.sheet textarea:focus-visible,
+.reader__verse:focus-visible {
+  outline: 2px solid var(--verdigris-bright);
+  outline-offset: 2px;
+}
+
 .field input {
   flex: 1;
   min-width: 0;
