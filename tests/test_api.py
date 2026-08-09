@@ -204,8 +204,19 @@ class ApiTests(unittest.TestCase):
         # The title is verse 1 in Hebrew and unnumbered in English, so it is
         # filed as verse 0 and belongs at the head of verse 1.
         body = self.client.get("/api/interlinear/PSA.51.1").json()
-        self.assertIn("choirmaster", " ".join(w["gloss"] for w in body["words"]))
-        self.assertEqual([w["seq"] for w in body["words"]][:2], [1, 2])
+        words = body["words"]
+        self.assertIn("choirmaster", " ".join(w["gloss"] for w in words))
+        self.assertEqual([w["verse"] for w in words][0], 0)
+        self.assertEqual([w["verse"] for w in words][-1], 1)
+        # Both verses number their own words from 1, so seq alone is ambiguous
+        # and the pair has to identify the word.
+        keys = [(w["verse"], w["seq"]) for w in words]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_interlinear_rejects_a_range(self):
+        # A range has one original per verse, not one between them.
+        self.assertEqual(self.client.get("/api/interlinear/PHP.4.6-7").status_code, 400)
+        self.assertEqual(self.client.get("/api/interlinear/PHP.4.6").status_code, 200)
 
     def test_affixes_have_no_dictionary_entry(self):
         # Prefixes are tagged H9xxx, which is STEPBible's extension: real
@@ -257,6 +268,21 @@ class ApiTests(unittest.TestCase):
         finally:
             con.close()
         self.assertEqual(ordinals, sorted(ordinals))
+
+    def test_a_psalm_title_and_its_first_verse_are_one_reference(self):
+        # H8605 ("prayer") stands in both the title and the first line of
+        # Psalms 17 and 102. Both read as verse 1, so listing them apart would
+        # show those verses twice and count them twice. It spans few enough
+        # verses to check the whole concordance in one page.
+        body = self.client.get("/api/strongs/H8605/verses?limit=100").json()
+        seen = [r["ref"] for r in body["refs"]]
+        self.assertEqual(len(seen), body["total"])
+        self.assertEqual(len(seen), len(set(seen)))
+        self.assertFalse([r for r in body["refs"] if r["verse"] == 0])
+        # Merged, not dropped: the title's word is still counted in the verse.
+        merged = {r["ref"]: r for r in body["refs"]}
+        self.assertEqual(merged["PSA.17.1"]["hits"], 2)
+        self.assertEqual(merged["PSA.102.1"]["hits"], 2)
 
     def test_strongs_concordance_pages_without_repeating(self):
         first = self.client.get("/api/strongs/G26/verses?limit=5").json()

@@ -273,6 +273,13 @@ def parse_tagnt(path: Path, morphology: dict[str, str]):
         # for κἀγώ. The first is the word the reader looked up.
         morph = morph.split(" + ")[0]
 
+        # Two statements of which editions carry the word: a terse code on the
+        # reference (NKO) and the full list in its own column. Where both are
+        # present the list is the fuller one and settles it -- a reference
+        # marked "no" means NA28 has the word with a variant spelling, and
+        # reading the code alone would file it as Received Text only.
+        editions = row[5].strip() or editions
+
         key = (book, chapter, verse)
         seqs[key] = seqs.get(key, 0) + 1
         yield Word(
@@ -290,7 +297,7 @@ def parse_tagnt(path: Path, morphology: dict[str, str]):
             parsing=morphology.get(morph.strip(), ""),
             lemma=_nfc(lemma.strip()),
             lemma_gloss=lemma_gloss.strip(),
-            editions=row[5].strip() or editions,
+            editions=editions,
             # An uppercase N means an edition of the critical text carries the
             # word. Without one it is in the Received Text alone -- which is
             # exactly the KJV's underlying text, so it is shown, and flagged.

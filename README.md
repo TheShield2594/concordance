@@ -96,7 +96,7 @@ etl/         the one-time data pipeline
   build_db.py        parse them into data/concordance.db
   schema.sql         the schema, commented
   books.py           66 books, their codes, and name resolution
-  originals.py       the tagged Hebrew/Greek and Strong's, parsed
+  originals.py       the tagged Hebrew/Aramaic/Greek and Strong's, parsed
 server/      the API: main.py, search.py, refs.py, originals.py, db.py
 web/         the SPA: views.jsx, components.jsx, sheets.jsx, styles.css
 tests/       58 tests over the parsing rules and every endpoint

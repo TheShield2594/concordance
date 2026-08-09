@@ -1,5 +1,6 @@
 """Parsing rules that are easy to get wrong and expensive to notice later."""
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -171,6 +172,42 @@ class TaggedOriginals(unittest.TestCase):
         )
         # Asking for the prefix gets the prefix, not the noun beside it.
         self.assertEqual(og._tahot_lemma(expanded, "H9003"), ("ב", "in"))
+
+    def test_the_edition_column_outranks_the_reference_code(self):
+        # "=no" says NA has the word with a variant spelling; reading that code
+        # alone flags it as Received Text only, which is the opposite of true.
+        row = [
+            "Mat.3.6#06=no",
+            "ποταμῷ (potamō)",
+            "river",
+            "G4215=N-DSM",
+            "ποταμός=river",
+            "NA28+NA27+Tyn+SBL+WH+Treg",
+            "", "", "", "", "", "", "",
+        ]
+        word = self._one_tagnt_word(row)
+        self.assertEqual(word.variant, 0)
+        self.assertEqual(word.editions, "NA28+NA27+Tyn+SBL+WH+Treg")
+
+    def test_a_received_text_only_word_is_still_flagged(self):
+        row = [
+            "Mat.15.6#01=k",
+            "καὶ (kai)",
+            "and",
+            "G2532=CONJ",
+            "καί=and",
+            "TR+Byz",
+            "", "", "", "", "", "", "",
+        ]
+        self.assertEqual(self._one_tagnt_word(row).variant, 1)
+
+    def _one_tagnt_word(self, row):
+        """Run one hand-written TAGNT line through the real parser."""
+        path = Path(self.enterContext(tempfile.TemporaryDirectory())) / "TAGNT.txt"
+        path.write_text("\t".join(row) + "\n", encoding="utf-8")
+        words = list(og.parse_tagnt(path, {}))
+        self.assertEqual(len(words), 1)
+        return words[0]
 
     def test_reference_forms(self):
         self.assertEqual(og._parse_ref("Gen.1.1#01=L"), ("GEN", 1, 1, "L"))

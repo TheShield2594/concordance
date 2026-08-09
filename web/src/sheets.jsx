@@ -179,7 +179,7 @@ export function InterlinearSheet({ verseRef, translation, onClose, onStrongs }) 
         <div className="interlinear" dir={data.direction}>
           {words.map((word) => (
             <button
-              key={word.seq}
+              key={`${word.verse}-${word.seq}`}
               type="button"
               // The grid runs right to left for Hebrew, but the slip's own
               // contents are English and read the other way. Without this the
@@ -239,11 +239,19 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
   // occurrences stay stacked underneath the new one's.
   useEffect(() => setPages([]), [number, translation])
 
+  // Which word the list currently belongs to. A "load more" already in flight
+  // when the reader taps through to another word must not land its page --
+  // or its error -- on top of the new one's occurrences.
+  const showing = `${number}/${translation}`
+  const current = useRef(showing)
+  current.current = showing
+
   const refs = [...(first.data?.refs ?? []), ...pages]
   const total = first.data?.total ?? 0
   const more = refs.length < total
 
   const loadMore = async () => {
+    const asked = showing
     setBusy(true)
     setError(null)
     try {
@@ -252,11 +260,11 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
         limit: 25,
         offset: refs.length,
       })
-      setPages((rows) => [...rows, ...next.refs])
+      if (current.current === asked) setPages((rows) => [...rows, ...next.refs])
     } catch (e) {
-      setError(e)
+      if (current.current === asked) setError(e)
     } finally {
-      setBusy(false)
+      if (current.current === asked) setBusy(false)
     }
   }
 
@@ -323,7 +331,7 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
           </div>
           <div className="stack">
             {refs.map((ref) => (
-              <article key={`${ref.ref}-${ref.verse}`} className="card">
+              <article key={ref.ref} className="card">
                 <div className="card__head">
                   <CallNumber onClick={() => onRead(ref.book, ref.chapter)}>
                     {ref.ref}
@@ -332,7 +340,6 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
                   {ref.hits > 1 && (
                     <span className="tag tag--count">{ref.hits}×</span>
                   )}
-                  {ref.verse === 0 && <span className="tag">superscription</span>}
                 </div>
                 {ref.text && <p className="card__text">{ref.text}</p>}
                 <p className="quote">{ref.glosses}</p>

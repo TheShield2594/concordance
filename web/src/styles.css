@@ -13,6 +13,8 @@
   --verdigris: #5c7a6b;
   --verdigris-bright: #79a08c;
   --paper: #f2ecd9;
+  /* Paper caught in the light: the hover state of anything paper-coloured. */
+  --paper-lit: #fbf6e8;
 
   --rule: rgba(232, 220, 196, 0.14);
   --rule-strong: rgba(232, 220, 196, 0.28);
@@ -754,7 +756,7 @@ select {
 }
 
 .slip:hover:not(:disabled) {
-  background: #fff;
+  background: var(--paper-lit);
 }
 
 /* Carried by the Received Text alone. Present, because the KJV translates it,

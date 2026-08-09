@@ -126,14 +126,19 @@ DOWNLOADS = [
     ),
     (
         "TEHMC.txt",
-        f"{STEPBIBLE}/Morphology%20codes/TEHMC%20-%20Translators%20Expansion%20of"
-        "%20Hebrew%20Morphology%20Codes%20-%20STEPBible.org%20CC%20BY.txt",
+        (
+            f"{STEPBIBLE}/Morphology%20codes/TEHMC%20-%20Translators%20Expansion"
+            "%20of%20Hebrew%20Morphology%20Codes%20-%20STEPBible.org%20CC%20BY.txt"
+        ),
         "78779bea824b31d4467dec0161d547481c86f266bc39def12cd11dc7dcbe6da7",
     ),
     (
         "TEGMC.txt",
-        f"{STEPBIBLE}/Morphology%20codes/TEGMC%20-%20Translators%20Expansion%20of"
-        "%20Greek%20Morphhology%20Codes%20-%20STEPBible.org%20CC%20BY.txt",
+        # "Morphhology" is upstream's spelling, and the URL only resolves with it.
+        (
+            f"{STEPBIBLE}/Morphology%20codes/TEGMC%20-%20Translators%20Expansion"
+            "%20of%20Greek%20Morphhology%20Codes%20-%20STEPBible.org%20CC%20BY.txt"
+        ),
         "5f0416f7617019a6082285214903bde569a980d5fd3b88b8d7020d944e94de82",
     ),
     (

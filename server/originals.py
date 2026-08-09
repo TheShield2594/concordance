@@ -29,12 +29,12 @@ def parse_strongs(value: str) -> str | None:
     return f"{m.group(1).upper()}{int(m.group(2))}"
 
 
-def looks_like_strongs(q: str) -> bool:
-    return parse_strongs(q) is not None
-
-
 def word_row(r: sqlite3.Row) -> dict:
     return {
+        # `verse` and `seq` together identify the word: a Psalm title is verse
+        # 0 and numbers its own words from 1, so it collides with verse 1 on
+        # seq alone.
+        "verse": r["verse"],
         "seq": r["seq"],
         "lang": r["lang"],
         "surface": r["surface"],
@@ -56,7 +56,7 @@ def word_row(r: sqlite3.Row) -> dict:
 
 
 WORD_SELECT = """
-    SELECT w.seq, w.lang, w.surface, w.translit, w.gloss, w.strongs,
+    SELECT w.verse, w.seq, w.lang, w.surface, w.translit, w.gloss, w.strongs,
            w.strongs_base, w.morph, w.parsing, w.lemma, w.lemma_gloss,
            w.editions, w.variant,
            (s.id IS NOT NULL) AS in_dictionary

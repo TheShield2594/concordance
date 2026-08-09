@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS original_words (
     chapter      INTEGER NOT NULL,
     verse        INTEGER NOT NULL,
     seq          INTEGER NOT NULL,      -- 1..n across the verse
-    lang         TEXT NOT NULL,         -- heb | arc | grc
+    lang         TEXT NOT NULL CHECK (lang IN ('heb', 'arc', 'grc')),
     surface      TEXT NOT NULL,         -- the word as written, pointed
     translit     TEXT,
     gloss        TEXT,                  -- its sense *here*
@@ -115,7 +115,8 @@ CREATE INDEX IF NOT EXISTS original_words_strongs
 -- no zero padding: H430, G26.
 CREATE TABLE IF NOT EXISTS strongs_entries (
     id         TEXT PRIMARY KEY,        -- H430
-    lang       TEXT NOT NULL,           -- heb | grc  (Strong's files Aramaic under Hebrew)
+    -- No 'arc': Strong's files the Aramaic vocabulary under Hebrew.
+    lang       TEXT NOT NULL CHECK (lang IN ('heb', 'grc')),
     lemma      TEXT,
     translit   TEXT,
     pron       TEXT,

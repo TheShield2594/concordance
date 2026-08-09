@@ -579,8 +579,10 @@ def interlinear(
     if translation == "ALL":
         translation = "KJV"
     parsed = refs.parse(ref)
-    if parsed is None or not parsed.verse_start:
-        raise HTTPException(400, "expected a reference like PHP.4.6")
+    # A range has one original per verse, not one between them. Taking the
+    # first and echoing the range back would label PHP.4.6's words PHP.4.6-7.
+    if parsed is None or not parsed.verse_start or parsed.verse_end != parsed.verse_start:
+        raise HTTPException(400, "expected a single verse, like PHP.4.6")
 
     row = con.execute(
         """SELECT v.id, v.book, v.chapter, v.verse, v.translation, v.text,
@@ -664,25 +666,29 @@ def strongs_verses(
     if translation == "ALL":
         translation = "KJV"
 
+    # A Psalm superscription is filed as verse 0 and read at the head of verse
+    # 1, so both resolve to the same reference. Folding them together before
+    # grouping keeps a word used in both the title and the first line of a
+    # Psalm from being listed twice and counted twice.
     total = con.execute(
-        """SELECT count(*) FROM (SELECT DISTINCT book, chapter, verse
+        """SELECT count(*) FROM (SELECT DISTINCT book, chapter, max(verse, 1)
                                  FROM original_words WHERE strongs_base = ?)""",
         [key],
     ).fetchone()[0]
 
     rows = con.execute(
-        """SELECT w.book, w.chapter, w.verse, b.name AS book_name,
+        """SELECT w.book, w.chapter, max(w.verse, 1) AS verse, b.name AS book_name,
                   count(*) AS hits,
                   group_concat(w.surface, ' ') AS surfaces,
                   group_concat(w.gloss, ' / ') AS glosses,
                   (SELECT v.text FROM verses v
                     WHERE v.translation = ? AND v.book = w.book
-                      AND v.chapter = w.chapter AND v.verse = w.verse) AS text
+                      AND v.chapter = w.chapter AND v.verse = max(w.verse, 1)) AS text
            FROM original_words w
            JOIN books b ON b.code = w.book
            WHERE w.strongs_base = ?
-           GROUP BY w.book, w.chapter, w.verse
-           ORDER BY b.ordinal, w.chapter, w.verse
+           GROUP BY w.book, w.chapter, max(w.verse, 1)
+           ORDER BY b.ordinal, w.chapter, max(w.verse, 1)
            LIMIT ? OFFSET ?""",
         [translation, key, limit, offset],
     ).fetchall()
@@ -693,12 +699,10 @@ def strongs_verses(
         "total": total,
         "refs": [
             {
-                # A Psalm superscription has no English verse number; it reads
-                # as the head of verse 1, which is where the app files it.
-                "ref": f"{r['book']}.{r['chapter']}.{max(r['verse'], 1)}",
+                "ref": f"{r['book']}.{r['chapter']}.{r['verse']}",
                 "label": refs.label(
                     r["book_name"],
-                    refs.Ref(r["book"], r["chapter"], max(r["verse"], 1), max(r["verse"], 1)),
+                    refs.Ref(r["book"], r["chapter"], r["verse"], r["verse"]),
                 ),
                 "book": r["book"],
                 "chapter": r["chapter"],
