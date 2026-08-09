@@ -121,7 +121,7 @@ export function Marked({ segments, text }) {
  * A search result. Reference stamp, translation tag, verse text with the
  * matched terms marked, and the three actions.
  */
-export function VerseCard({ verse, onRead, onNote, onCrossRefs, noteCount }) {
+export function VerseCard({ verse, onRead, onNote, onCrossRefs, onOriginal, noteCount }) {
   return (
     <article className="card">
       <div className="card__head">
@@ -152,6 +152,11 @@ export function VerseCard({ verse, onRead, onNote, onCrossRefs, noteCount }) {
         >
           Cross-refs
         </button>
+        {onOriginal && (
+          <button type="button" className="action" onClick={() => onOriginal(verse)}>
+            Original
+          </button>
+        )}
       </div>
     </article>
   )

@@ -79,6 +79,52 @@ CREATE VIRTUAL TABLE IF NOT EXISTS topics_fts USING fts5(
     tokenize='unicode61'
 );
 
+-- The Hebrew, Aramaic and Greek behind the English, one row per word of the
+-- original, in the order it stands in the verse. Written once by the ETL and
+-- read-only afterwards, like `verses`.
+--
+-- `verse` 0 is a Psalm superscription: Hebrew counts it as verse 1 and English
+-- Bibles print it unnumbered, so it has no verse row of its own to hang off.
+CREATE TABLE IF NOT EXISTS original_words (
+    id           INTEGER PRIMARY KEY,
+    book         TEXT NOT NULL REFERENCES books(code),
+    chapter      INTEGER NOT NULL,
+    verse        INTEGER NOT NULL,
+    seq          INTEGER NOT NULL,      -- 1..n across the verse
+    lang         TEXT NOT NULL CHECK (lang IN ('heb', 'arc', 'grc')),
+    surface      TEXT NOT NULL,         -- the word as written, pointed
+    translit     TEXT,
+    gloss        TEXT,                  -- its sense *here*
+    strongs      TEXT,                  -- disambiguated: H4428G
+    strongs_base TEXT,                  -- what the dictionary is keyed by: H4428
+    morph        TEXT,                  -- raw morphology code
+    parsing      TEXT,                  -- the same code in words
+    lemma        TEXT,                  -- dictionary form
+    lemma_gloss  TEXT,
+    editions     TEXT,                  -- editions carrying it / Hebrew text type
+    variant      INTEGER NOT NULL DEFAULT 0  -- 1 == no critical edition has it
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS original_words_loc
+    ON original_words(book, chapter, verse, seq);
+-- The concordance: every place a Strong's number is used, in canonical order.
+CREATE INDEX IF NOT EXISTS original_words_strongs
+    ON original_words(strongs_base, book, chapter, verse, seq);
+
+-- Strong's own dictionary. Keyed the way the dictionaries themselves are, with
+-- no zero padding: H430, G26.
+CREATE TABLE IF NOT EXISTS strongs_entries (
+    id         TEXT PRIMARY KEY,        -- H430
+    -- No 'arc': Strong's files the Aramaic vocabulary under Hebrew.
+    lang       TEXT NOT NULL CHECK (lang IN ('heb', 'grc')),
+    lemma      TEXT,
+    translit   TEXT,
+    pron       TEXT,
+    derivation TEXT,
+    definition TEXT,
+    kjv_usage  TEXT
+);
+
 -- Personal notes. Unlike verses these change at runtime, so the FTS index is
 -- kept in step with triggers.
 CREATE TABLE IF NOT EXISTS notes (

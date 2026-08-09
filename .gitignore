@@ -1,4 +1,4 @@
-# Generated data: rebuild with `make setup` (sources are ~26 MB, db ~40 MB)
+# Generated data: rebuild with `make setup` (sources are ~130 MB, db ~130 MB)
 data/sources/
 data/*.db
 data/*.db-wal

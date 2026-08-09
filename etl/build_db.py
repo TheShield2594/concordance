@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import books as bk  # noqa: E402
+import originals as og  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "data" / "sources"
@@ -219,6 +220,87 @@ def load_naves(path: Path, valid: dict[tuple[str, int], int]):
 
 
 # --------------------------------------------------------------------------
+# the original languages
+# --------------------------------------------------------------------------
+
+WORD_COLUMNS = (
+    "book, chapter, verse, seq, lang, surface, translit, gloss, strongs,"
+    " strongs_base, morph, parsing, lemma, lemma_gloss, editions, variant"
+)
+
+
+def load_originals(con: sqlite3.Connection) -> None:
+    """Load the tagged Hebrew/Aramaic/Greek text and Strong's dictionaries."""
+    missing = [
+        name
+        for name in (
+            *og.TAHOT_FILES,
+            *og.TAGNT_FILES,
+            *og.MORPH_FILES.values(),
+            *(f for f, _ in og.STRONGS_FILES.values()),
+        )
+        if not (SOURCES / name).exists()
+    ]
+    if missing:
+        raise SystemExit(
+            f"missing sources {missing} -- run etl/fetch_sources.py first"
+        )
+
+    for lang, (filename, letter) in og.STRONGS_FILES.items():
+        con.executemany(
+            "INSERT OR REPLACE INTO strongs_entries(id, lang, lemma, translit,"
+            " pron, derivation, definition, kjv_usage) VALUES (?,?,?,?,?,?,?,?)",
+            og.load_strongs(SOURCES / filename, lang, letter),
+        )
+    n_entries = con.execute("SELECT count(*) FROM strongs_entries").fetchone()[0]
+    print(f"  {n_entries:,} Strong's entries")
+
+    morphology = {
+        lang: og.load_morphology(SOURCES / name)
+        for lang, name in og.MORPH_FILES.items()
+    }
+    placeholders = ",".join("?" * len(WORD_COLUMNS.split(",")))
+    for filename in og.TAHOT_FILES + og.TAGNT_FILES:
+        greek = filename.startswith("TAGNT")
+        parse = og.parse_tagnt if greek else og.parse_tahot
+        words = parse(SOURCES / filename, morphology["grc" if greek else "heb"])
+        con.executemany(
+            f"INSERT OR IGNORE INTO original_words({WORD_COLUMNS})"
+            f" VALUES ({placeholders})",
+            (
+                (
+                    w.book, w.chapter, w.verse, w.seq, w.lang, w.surface,
+                    w.translit, w.gloss, w.strongs, w.strongs_base, w.morph,
+                    w.parsing, w.lemma, w.lemma_gloss, w.editions, w.variant,
+                )
+                for w in words
+            ),
+        )
+
+    for lang, name in (("heb", "Hebrew"), ("arc", "Aramaic"), ("grc", "Greek")):
+        n = con.execute(
+            "SELECT count(*) FROM original_words WHERE lang = ?", (lang,)
+        ).fetchone()[0]
+        print(f"  {n:>7,}  {name}")
+
+    # The taggers number verses as English Bibles do, but "as English Bibles do"
+    # is not one convention: Joel and Malachi divide their chapters differently,
+    # and a handful of verses sit one number off. Anything that lands on no
+    # verse of ours is unreachable from the app, so say how much of it there is
+    # rather than let it sit there silently.
+    orphans = con.execute(
+        """SELECT count(*) FROM (
+             SELECT DISTINCT w.book, w.chapter, w.verse FROM original_words w
+             WHERE w.verse > 0
+               AND NOT EXISTS (SELECT 1 FROM verses v
+                               WHERE v.book = w.book AND v.chapter = w.chapter
+                                 AND v.verse = w.verse))"""
+    ).fetchone()[0]
+    if orphans:
+        print(f"    {orphans:,} tagged verses have no English verse to attach to")
+
+
+# --------------------------------------------------------------------------
 # build
 # --------------------------------------------------------------------------
 
@@ -382,6 +464,9 @@ def populate(con: sqlite3.Connection, saved_notes: list[tuple]) -> None:
     n_topics = con.execute("SELECT count(*) FROM topics").fetchone()[0]
     n_refs = con.execute("SELECT count(*) FROM topic_verses").fetchone()[0]
     print(f"  {n_topics:,} topics, {n_refs:,} references")
+
+    print("original languages:")
+    load_originals(con)
 
     if saved_notes:
         placeholders = ",".join("?" * len(saved_notes[0]))

@@ -18,9 +18,9 @@ make setup
 make serve
 ```
 
-`make setup` builds a virtualenv, pulls down about 26 MB of scripture, grinds it
-into `data/concordance.db`, and compiles the interface. Budget three minutes, most
-of it download time. Then `make serve` starts one process on `127.0.0.1:8000` that
+`make setup` builds a virtualenv, pulls down about 130 MB of scripture and tagged
+originals, grinds it into `data/concordance.db`, and compiles the interface. Budget
+five minutes, most of it download time. Then `make serve` starts one process on `127.0.0.1:8000` that
 hands out both the API and the UI.
 
 That database file is the entire application state, so backing it up backs up your
@@ -55,10 +55,23 @@ across book boundaries, and a dot beside any verse you've written on.
 means they surface in search results next to scripture. Search "prison" and you'll
 get Acts 16 alongside the thing you wrote about Philippians last March.
 
-**Cross-refs** work through Nave's rather than a cross-reference dataset, since v1
-has no such dataset and Strong's is out of scope. Two verses are related when Nave's
-files them under the same topic, smallest topics first, so PHP.4.6 pulls up CARE and
-THANKFULNESS before it pulls up GOD.
+**Cross-refs** work through Nave's rather than a cross-reference dataset, since there
+is no such dataset here. Two verses are related when Nave's files them under the same
+topic, smallest topics first, so PHP.4.6 pulls up CARE and THANKFULNESS before it
+pulls up GOD.
+
+**The original languages** sit one tap behind every verse. The number in the reader
+margin, or "Original" on a search result, opens the verse word by word: the Hebrew,
+Aramaic or Greek as it is written, a transliteration, the sense the word carries
+*here*, its Strong's number and its parsing. Tap a word for Strong's own entry, and
+under that, every other verse the word stands in — 318 verses for λόγος, each showing
+what the taggers made of it in that place, which is how you find out that the word
+behind "communication" in Matthew 5:37 is the same one behind "the Word" in John 1:1.
+
+The words are set beside the English, not aligned to it. No public dataset lines up
+these four translations word for word, so the app puts the whole verse next to its
+original and lets you do the joining. Anything else would be a guess wearing a
+confident face.
 
 ## How it's built
 
@@ -83,9 +96,10 @@ etl/         the one-time data pipeline
   build_db.py        parse them into data/concordance.db
   schema.sql         the schema, commented
   books.py           66 books, their codes, and name resolution
-server/      the API: main.py, search.py, refs.py, db.py
+  originals.py       the tagged Hebrew/Aramaic/Greek and Strong's, parsed
+server/      the API: main.py, search.py, refs.py, originals.py, db.py
 web/         the SPA: views.jsx, components.jsx, sheets.jsx, styles.css
-tests/       38 tests over the parsing rules and every endpoint
+tests/       58 tests over the parsing rules and every endpoint
 ```
 
 Development is `make dev`, which puts the API on 8000 and Vite with hot reload on
@@ -98,10 +112,14 @@ Development is `make dev`, which puts the API on 8000 and Vite with hot reload o
 | [scrollmapper/bible_databases][sm] | KJV, ASV, BSB | public domain texts |
 | [seven1m/open-bibles][ob] | WEB | public domain |
 | [BradyStephenson/bible-data][bd] | Nave's | dataset CC BY 4.0, Nave's itself public domain |
+| [STEPBible/STEPBible-Data][sb] | the tagged Hebrew, Aramaic and Greek, and the morphology codes in English | CC BY 4.0 |
+| [openscriptures/strongs][os] | Strong's dictionary entries | Strong's is public domain; the JSON is CC BY-SA |
 
 [sm]: https://github.com/scrollmapper/bible_databases
 [ob]: https://github.com/seven1m/open-bibles
 [bd]: https://github.com/BradyStephenson/bible-data
+[sb]: https://github.com/STEPBible/STEPBible-Data
+[os]: https://github.com/openscriptures/strongs
 
 Two wrinkles worth knowing about.
 
@@ -130,6 +148,10 @@ across 76,141.
 verses(id, book, chapter, verse, translation, text)
 topics(id, name, section)
 topic_verses(topic_id, verse_ref, book, chapter, verse_start, verse_end, heading, seq)
+original_words(id, book, chapter, verse, seq, lang, surface, translit, gloss,
+               strongs, strongs_base, morph, parsing, lemma, lemma_gloss,
+               editions, variant)
+strongs_entries(id, lang, lemma, translit, pron, derivation, definition, kjv_usage)
 notes(id, verse_ref, book, chapter, verse, translation, body, created_at, updated_at)
 books(code, name, ordinal, testament)
 translations(code, name, year, license, source)
@@ -149,6 +171,16 @@ raw, with a substring fallback behind them.
 Verses never change after the ETL runs, so their index gets built in one shot and
 left alone. Notes change constantly, so triggers keep `notes_fts` honest.
 
+`original_words` holds 447,513 rows — 300,825 Hebrew, 4,827 Aramaic, 141,861 Greek —
+and needs no full-text index at all: a Strong's number is an exact key, so the
+concordance is an index scan rather than a search. `strongs_base` is the number
+without the letter STEPBible adds to disambiguate one Strong's number covering two
+words, which is what joins a word to its dictionary entry.
+
+Verse 0 is a Psalm superscription. Hebrew counts the title as verse 1 and English
+Bibles print it unnumbered, so it has no verse of its own to hang off; the API sets
+it at the head of verse 1, which is where it is read.
+
 ## The API
 
 | Endpoint | Returns |
@@ -160,6 +192,9 @@ left alone. Notes change constantly, so triggers keep `notes_fts` honest.
 | `GET /api/chapter/{book}/{chapter}` | a chapter, its neighbours, per-verse note counts |
 | `GET /api/verse/{ref}` | one verse in one translation or all four |
 | `GET /api/cross-refs/{ref}` | related verses by way of shared topics |
+| `GET /api/interlinear/{ref}` | one verse word by word in Hebrew, Aramaic or Greek |
+| `GET /api/strongs/{number}` | a Strong's entry, and how the taggers read it |
+| `GET /api/strongs/{number}/verses` | every verse the word stands in |
 | `GET POST PATCH DELETE /api/notes` | your notes |
 | `GET /api/health` | liveness, cheap enough to poll |
 | `GET /api/stats` | verse, topic and note counts |
@@ -226,15 +261,26 @@ WantedBy=multi-user.target
 make test
 ```
 
-38 of them. Half cover the parsing rules that are cheap to break and expensive to
+58 of them. Half cover the parsing rules that are cheap to break and expensive to
 notice: book codes, the Nave's citation grammar (an implied book carrying across
 `1CH 6:3; 23:13`, whole-chapter refs, numbers in prose that aren't references),
-call numbers, and FTS query building against hostile input. The other
-half drive every endpoint against a scratch copy of the real database.
+call numbers, FTS query building against hostile input, and the tagged-original
+grammar (which morpheme of a Hebrew word carries the dictionary entry, Strong's
+numbers written four different ways, references with a second versification in
+brackets). The other half drive every endpoint against a scratch copy of the real
+database, Genesis 1:1 and John 1:1 included, because a silently empty interlinear
+would otherwise look exactly like a verse with no tagging.
 
 ## What it doesn't do
 
-No commentaries, no Strong's or original languages, no cloud sync, no second user,
-no reading plans. Song of Solomon has no entries in this Nave's dataset, so it turns
-up in search and reading but under no topic. Cross-references come from topical
-co-occurrence and will sometimes hand you something sideways.
+No commentaries, no cloud sync, no second user, no reading plans. Song of Solomon has
+no entries in this Nave's dataset, so it turns up in search and reading but under no
+topic. Cross-references come from topical co-occurrence and will sometimes hand you
+something sideways.
+
+**Highlighting an English word does not find its Greek.** The original is shown a
+verse at a time, beside the English rather than mapped onto it. Word-level alignment
+needs a dataset that ties a particular English word to a particular Greek one, and
+none of these four translations ships with tags. The nearest exact source is a
+Strong's-tagged KJV, which would work for the KJV alone and carries the Textus
+Receptus with it.
