@@ -245,7 +245,22 @@ def rescue_notes(db_path: Path) -> list[tuple]:
         con.close()
 
 
+def require_fts5() -> None:
+    """Fail here, with a sentence, rather than deep in schema.sql."""
+    probe = sqlite3.connect(":memory:")
+    try:
+        probe.execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+    except sqlite3.OperationalError as exc:
+        raise SystemExit(
+            "this Python's SQLite was built without FTS5, which the whole app "
+            f"rests on ({exc}). Use a python.org build or a distro package."
+        ) from exc
+    finally:
+        probe.close()
+
+
 def build(db_path: Path) -> None:
+    require_fts5()
     saved_notes = rescue_notes(db_path)
     if saved_notes:
         print(f"holding on to {len(saved_notes):,} note(s) across the rebuild")
@@ -272,14 +287,10 @@ def build(db_path: Path) -> None:
 
     print("verses:")
     for code, name, *_ in TRANSLATIONS:
-        if code == "WEB":
-            src = SOURCES / "eng-web.usfx.xml"
-            rows = load_usfx(src)
-        else:
-            src = SOURCES / f"{code}.json"
-            rows = load_scrollmapper(src, code)
+        src = SOURCES / ("eng-web.usfx.xml" if code == "WEB" else f"{code}.json")
         if not src.exists():
             raise SystemExit(f"missing source {src} -- run etl/fetch_sources.py first")
+        rows = load_usfx(src) if code == "WEB" else load_scrollmapper(src, code)
         con.executemany(
             "INSERT OR IGNORE INTO verses(book, chapter, verse, translation, text)"
             " VALUES (?,?,?,?,?)",

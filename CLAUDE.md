@@ -8,13 +8,13 @@ notes. Read the README first, it explains the shape of the thing.
 
 Commits belong to the repo owner. Author every commit as:
 
-```
+```text
 TheShield2594 <82059300+TheShield2594@users.noreply.github.com>
 ```
 
 Set it before committing so it can't be forgotten:
 
-```
+```sh
 git config user.name "TheShield2594"
 git config user.email "82059300+TheShield2594@users.noreply.github.com"
 ```
@@ -28,12 +28,14 @@ Work on `claude/concordance-bible-app-44mnid` unless told otherwise. Push with
 
 ## Commands
 
-```
+```sh
 make setup    # venv, download sources, build the database, build the UI
 make serve    # production: one process on 0.0.0.0:8000
 make dev      # API on 8000, Vite with hot reload on 5173
 make test     # 37 tests, run before every commit
 make data     # rebuild data/concordance.db from the downloaded sources
+make clean    # build artifacts only, leaves the database alone
+make reset    # destructive: deletes the database, notes and all
 ```
 
 `make test` needs `data/concordance.db` to exist, and fails rather than skips without

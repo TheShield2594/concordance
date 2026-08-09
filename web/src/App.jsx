@@ -24,6 +24,9 @@ const SUBTITLE = {
 export default function App() {
   const [route, navigate] = useRoute()
   const [translation, setTranslation] = useStoredState('concordance.translation', 'ALL')
+  // The reader has to name one translation. Keeping that choice separate means
+  // a search filtered across ALL stays ALL when you go read something.
+  const [reading, setReading] = useStoredState('concordance.reading', 'KJV')
   const meta = useAsync(() => api.meta(), [])
 
   // Sheets: one note editor and one cross-reference panel at a time.
@@ -32,11 +35,13 @@ export default function App() {
   // Bumped whenever notes change, so open views refetch.
   const [notesVersion, setNotesVersion] = useState(0)
 
+  // A note opened without a translation takes the one currently on screen,
+  // not a hardcoded KJV; the ALL case is resolved to `readable` below.
   const actions = {
     note: useCallback(
       (ref, forTranslation) =>
-        setNoteSheet({ ref, translation: forTranslation || 'KJV' }),
-      [],
+        setNoteSheet({ ref, translation: forTranslation || translation }),
+      [translation],
     ),
     crossRefs: useCallback((ref) => setCrossSheet({ ref }), []),
   }
@@ -52,13 +57,35 @@ export default function App() {
   }, [route])
 
   const chips = meta.data?.translation_chips ?? ['ALL', 'KJV', 'ASV', 'WEB', 'BSB']
-  const readable = translation === 'ALL' ? 'KJV' : translation
+  const readable = translation === 'ALL' ? reading : translation
+
+  // A code left in localStorage that the database no longer carries would
+  // filter every search down to nothing, so drop back to something real.
+  useEffect(() => {
+    const available = meta.data?.translation_chips
+    if (!available) return
+    if (!available.includes(translation)) setTranslation('ALL')
+    if (!available.includes(reading))
+      setReading(available.find((t) => t !== 'ALL') ?? 'KJV')
+  }, [meta.data, translation, reading, setTranslation, setReading])
+
+  // Picking a translation in the reader records a reading choice. It only
+  // rewrites the search filter when that filter already names one translation.
+  const chooseReading = useCallback(
+    (code) => {
+      setReading(code)
+      if (translation !== 'ALL') setTranslation(code)
+    },
+    [translation, setReading, setTranslation],
+  )
 
   const shared = {
     route,
     navigate,
     translation,
     setTranslation,
+    readable,
+    chooseReading,
     meta: meta.data,
     actions,
     notesVersion,

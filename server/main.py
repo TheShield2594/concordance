@@ -715,11 +715,16 @@ def stats(con: sqlite3.Connection = Depends(get_db)):
 DIST = (Path(__file__).resolve().parent.parent / "web" / "dist").resolve()
 
 if DIST.exists():
-    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+    if (DIST / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
         index = DIST / "index.html"
+        # An unmatched /api/... is a missing endpoint, not a page. Handing back
+        # index.html would turn a typo into a 200 full of HTML.
+        if path.startswith("api/"):
+            raise HTTPException(404, "no such endpoint")
         if not path:
             return FileResponse(index)
         candidate = (DIST / path).resolve()

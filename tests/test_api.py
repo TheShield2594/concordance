@@ -211,6 +211,11 @@ class ApiTests(unittest.TestCase):
         r = self.client.get("/api/verse/PHP.99999999999999999999.1")
         self.assertEqual(r.status_code, 400)
 
+    def test_unknown_api_path_is_404_not_the_spa(self):
+        r = self.client.get("/api/nonsense")
+        self.assertEqual(r.status_code, 404)
+        self.assertNotIn("<!doctype html>", r.text.lower())
+
     def test_spa_route_cannot_walk_out_of_the_build(self):
         if not (ROOT / "web" / "dist" / "index.html").exists():
             self.skipTest("web/dist not built")

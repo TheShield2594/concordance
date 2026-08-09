@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { api } from './api.js'
 import { CallNumber, ErrorNote, Sheet, Spinner } from './components.jsx'
@@ -13,6 +13,7 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
   const [editing, setEditing] = useState(null) // { id, body }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const editor = useRef(null)
 
   const refresh = () => {
     notes.reload()
@@ -33,6 +34,9 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
         setDraft('')
       }
       refresh()
+      // Saving empties the draft, which disables the button focus was sitting
+      // on. Put the cursor back in the editor instead of dropping it on <body>.
+      editor.current?.focus()
     } catch (e) {
       setError(e)
     } finally {
@@ -69,6 +73,7 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
       <ErrorNote error={notes.error} />
 
       <textarea
+        ref={editor}
         value={editing ? editing.body : draft}
         onChange={(e) =>
           editing

@@ -104,12 +104,16 @@ def main() -> int:
 
     SOURCES_DIR.mkdir(parents=True, exist_ok=True)
     print(f"sources -> {SOURCES_DIR}")
+    failed = []
     for name, url, expected in DOWNLOADS:
         try:
             download(name, url, expected, args.force)
-        except Exception as exc:  # noqa: BLE001 - report and keep going
+        except Exception as exc:  # noqa: BLE001 - report every failure, not the first
             print(f"  FAIL  {name}: {exc}", file=sys.stderr)
-            return 1
+            failed.append(name)
+    if failed:
+        print(f"failed: {', '.join(failed)}", file=sys.stderr)
+        return 1
     print("done")
     return 0
 

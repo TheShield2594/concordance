@@ -13,7 +13,7 @@ starts up, opens a file on disk, and answers questions about it.
 
 ## Getting it running
 
-```
+```sh
 make setup
 make serve
 ```
@@ -23,9 +23,17 @@ into `data/concordance.db`, and compiles the interface. Budget three minutes, mo
 of it download time. Then `make serve` binds `0.0.0.0:8000` and hands out both the
 API and the UI from one process.
 
-That database file is the entire application state. Copy it somewhere safe and your
-notes are backed up. `make data` rebuilds scripture from the sources and carries any
-notes across, but nothing brings them back if you lose the file itself.
+That database file is the entire application state, so backing it up backs up your
+notes. Don't just `cp` it while the app is running: WAL mode means recent writes
+live in `concordance.db-wal` until a checkpoint, and a copy taken mid-flight can
+miss them. Either stop the service first, or let SQLite do it live:
+
+```sh
+sqlite3 data/concordance.db ".backup '/mnt/backups/concordance.db'"
+```
+
+`make data` rebuilds scripture from the sources and carries any notes across.
+Nothing brings them back if you lose the file itself.
 
 ## What's in it
 
@@ -54,11 +62,20 @@ THANKFULNESS before it pulls up GOD.
 
 ## How it's built
 
-FastAPI on Python's stdlib `sqlite3`, which ships with FTS5 already compiled in.
-React 18 and Vite on the front, no UI framework, fonts bundled into the build so
-nothing phones Google. One SQLite file in WAL mode.
+FastAPI on Python's stdlib `sqlite3`. React 18 and Vite on the front, no UI
+framework, fonts bundled into the build so nothing phones Google. One SQLite file
+in WAL mode.
 
+Everything hangs off FTS5, which python.org builds, Debian, Ubuntu, Fedora, Alpine
+and Homebrew all enable, but a hand-rolled SQLite compiled without
+`SQLITE_ENABLE_FTS5` does not. The ETL checks on the way in and stops with an
+explanation rather than a confusing SQL error. To check first:
+
+```sh
+python3 -c "import sqlite3; sqlite3.connect(':memory:').execute('CREATE VIRTUAL TABLE t USING fts5(x)')"
 ```
+
+```text
 etl/         the one-time data pipeline
   fetch_sources.py   download the public domain sources
   build_db.py        parse them into data/concordance.db
@@ -197,7 +214,7 @@ WantedBy=multi-user.target
 
 ## Tests
 
-```
+```sh
 make test
 ```
 

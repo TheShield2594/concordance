@@ -174,6 +174,11 @@ const FOCUSABLE =
 /** Bottom sheet used for the note editor and cross-references. */
 export function Sheet({ title, subtitle, onClose, children }) {
   const panel = useRef(null)
+  // Callers pass an inline arrow, so onClose is a new function every render.
+  // Holding it in a ref keeps the effect below to mount and unmount -- otherwise
+  // every parent render tears it down and yanks focus back out of the sheet.
+  const close = useRef(onClose)
+  close.current = onClose
 
   useEffect(() => {
     const opener = document.activeElement
@@ -181,7 +186,7 @@ export function Sheet({ title, subtitle, onClose, children }) {
 
     const onKey = (e) => {
       if (e.key === 'Escape') {
-        onClose()
+        close.current()
         return
       }
       if (e.key !== 'Tab' || !panel.current) return
@@ -209,17 +214,21 @@ export function Sheet({ title, subtitle, onClose, children }) {
       document.body.style.overflow = ''
       if (opener instanceof HTMLElement) opener.focus()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div
       className="sheet-backdrop"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
     >
-      <div className="sheet" ref={panel} tabIndex={-1}>
+      <div
+        className="sheet"
+        ref={panel}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="sheet__head">
           <div>
             <h2 className="sheet__title">{title}</h2>

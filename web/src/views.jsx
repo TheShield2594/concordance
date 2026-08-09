@@ -187,14 +187,14 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
 
 /* ------------------------------------------------------------------ topics */
 
-export function TopicsView({ route, navigate, translation, actions }) {
+export function TopicsView({ route, navigate, readable, actions }) {
   const topicId = route.parts[0]
   if (topicId) {
     return (
       <TopicDetail
         topicId={topicId}
         navigate={navigate}
-        translation={translation}
+        readable={readable}
         actions={actions}
       />
     )
@@ -235,8 +235,7 @@ function TopicList({ navigate }) {
   )
 }
 
-function TopicDetail({ topicId, navigate, translation, actions }) {
-  const readable = translation === 'ALL' ? 'KJV' : translation
+function TopicDetail({ topicId, navigate, readable, actions }) {
   const { data, error, loading } = useAsync(
     () => api.topic(topicId, readable),
     [topicId, readable],
@@ -307,9 +306,8 @@ function TopicDetail({ topicId, navigate, translation, actions }) {
 
 /* -------------------------------------------------------------------- read */
 
-export function ReadView({ route, navigate, translation, setTranslation, meta, actions, notesVersion }) {
+export function ReadView({ route, navigate, readable, chooseReading, meta, actions, notesVersion }) {
   const [book, chapter] = route.parts
-  const readable = translation === 'ALL' ? 'KJV' : translation
   const chips = (meta?.translation_chips ?? []).filter((t) => t !== 'ALL')
 
   if (!book) return <BookPicker meta={meta} navigate={navigate} />
@@ -321,7 +319,7 @@ export function ReadView({ route, navigate, translation, setTranslation, meta, a
       book={book}
       chapter={Number(chapter)}
       translation={readable}
-      setTranslation={setTranslation}
+      setTranslation={chooseReading}
       chips={chips}
       navigate={navigate}
       actions={actions}
@@ -476,7 +474,14 @@ function Chapter({
                 data.prev && navigate(`read/${data.prev.book}/${data.prev.chapter}`)
               }
             >
-              ← {data.prev ? `${data.prev.book}.${data.prev.chapter}` : 'Start'}
+              ←{' '}
+              {data.prev ? (
+                <CallNumber onInk>
+                  {data.prev.book}.{data.prev.chapter}
+                </CallNumber>
+              ) : (
+                'Start'
+              )}
             </button>
             <button
               type="button"
@@ -486,7 +491,14 @@ function Chapter({
                 data.next && navigate(`read/${data.next.book}/${data.next.chapter}`)
               }
             >
-              {data.next ? `${data.next.book}.${data.next.chapter}` : 'End'} →
+              {data.next ? (
+                <CallNumber onInk>
+                  {data.next.book}.{data.next.chapter}
+                </CallNumber>
+              ) : (
+                'End'
+              )}{' '}
+              →
             </button>
           </div>
         </>
