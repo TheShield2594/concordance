@@ -20,8 +20,8 @@ make serve
 
 `make setup` builds a virtualenv, pulls down about 26 MB of scripture, grinds it
 into `data/concordance.db`, and compiles the interface. Budget three minutes, most
-of it download time. Then `make serve` binds `0.0.0.0:8000` and hands out both the
-API and the UI from one process.
+of it download time. Then `make serve` starts one process on `127.0.0.1:8000` that
+hands out both the API and the UI.
 
 That database file is the entire application state, so backing it up backs up your
 notes. Don't just `cp` it while the app is running: WAL mode means recent writes
@@ -75,6 +75,8 @@ explanation rather than a confusing SQL error. To check first:
 python3 -c "import sqlite3; sqlite3.connect(':memory:').execute('CREATE VIRTUAL TABLE t USING fts5(x)')"
 ```
 
+The shape of it:
+
 ```text
 etl/         the one-time data pipeline
   fetch_sources.py   download the public domain sources
@@ -83,7 +85,7 @@ etl/         the one-time data pipeline
   books.py           66 books, their codes, and name resolution
 server/      the API: main.py, search.py, refs.py, db.py
 web/         the SPA: views.jsx, components.jsx, sheets.jsx, styles.css
-tests/       37 tests over the parsing rules and every endpoint
+tests/       38 tests over the parsing rules and every endpoint
 ```
 
 Development is `make dev`, which puts the API on 8000 and Vite with hot reload on
@@ -193,8 +195,14 @@ text column on a wide screen instead of drifting to the corners.
 
 ## On the homelab
 
-`make serve` binds every interface so Tailscale can reach it. There's no auth, by
-design, which makes the tailnet the security boundary. Keep it off anything public.
+`make serve` listens on loopback. To reach it from your phone, bind every interface:
+
+```sh
+make serve HOST=0.0.0.0
+```
+
+There's no auth, by design, which makes the tailnet the security boundary. Bind wide
+only on a machine where that boundary holds, and keep it off anything public.
 
 ```ini
 # /etc/systemd/system/concordance.service
@@ -218,7 +226,7 @@ WantedBy=multi-user.target
 make test
 ```
 
-37 of them. Half cover the parsing rules that are cheap to break and expensive to
+38 of them. Half cover the parsing rules that are cheap to break and expensive to
 notice: book codes, the Nave's citation grammar (an implied book carrying across
 `1CH 6:3; 23:13`, whole-chapter refs, numbers in prose that aren't references),
 call numbers, and FTS query building against hostile input. The other

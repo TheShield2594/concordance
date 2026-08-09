@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -259,21 +260,52 @@ def require_fts5() -> None:
         probe.close()
 
 
+def discard(path: Path) -> None:
+    """Delete a database file and the WAL sidecars that belong to it."""
+    for candidate in (path, *(path.with_name(path.name + s) for s in ("-wal", "-shm"))):
+        if candidate.exists():
+            candidate.unlink()
+
+
 def build(db_path: Path) -> None:
     require_fts5()
     saved_notes = rescue_notes(db_path)
     if saved_notes:
         print(f"holding on to {len(saved_notes):,} note(s) across the rebuild")
 
-    if db_path.exists():
-        db_path.unlink()
-    for suffix in ("-wal", "-shm"):
-        stale = db_path.with_name(db_path.name + suffix)
-        if stale.exists():
-            stale.unlink()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    con = sqlite3.connect(db_path)
+    # Build alongside the live database and swap at the very end. A missing
+    # source or a parse error part way through then costs nothing: the old
+    # file, notes and all, is still sitting there.
+    tmp_path = db_path.with_name(db_path.name + ".building")
+    discard(tmp_path)
+
+    con = sqlite3.connect(tmp_path)
+    try:
+        populate(con, saved_notes)
+    except BaseException:
+        con.close()
+        discard(tmp_path)
+        print(f"build failed; {db_path} is untouched")
+        raise
+    con.close()
+
+    discard_sidecars(db_path)
+    os.replace(tmp_path, db_path)
+    size = db_path.stat().st_size
+    print(f"wrote {db_path} ({size / 1e6:.1f} MB)")
+
+
+def discard_sidecars(path: Path) -> None:
+    """Drop the old file's WAL sidecars so they can't be read against the new one."""
+    for suffix in ("-wal", "-shm"):
+        stale = path.with_name(path.name + suffix)
+        if stale.exists():
+            stale.unlink()
+
+
+def populate(con: sqlite3.Connection, saved_notes: list[tuple]) -> None:
     con.executescript(SCHEMA.read_text())
 
     con.executemany(
@@ -362,9 +394,6 @@ def build(db_path: Path) -> None:
     con.commit()
     con.execute("PRAGMA optimize")
     con.execute("VACUUM")
-    con.close()
-    size = db_path.stat().st_size
-    print(f"wrote {db_path} ({size / 1e6:.1f} MB)")
 
 
 def _flush_topic_verses(con: sqlite3.Connection, batch: list) -> None:

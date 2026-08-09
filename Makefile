@@ -1,8 +1,9 @@
 PY := .venv/bin/python
 PORT ?= 8000
-# Binds every interface so the tailnet can reach it. For loopback only:
-#   make serve HOST=127.0.0.1
-HOST ?= 0.0.0.0
+# Loopback by default: there is no auth, so nothing gets exposed by accident.
+# To reach it from your phone over the tailnet:
+#   make serve HOST=0.0.0.0
+HOST ?= 127.0.0.1
 
 .PHONY: setup venv data web serve dev test clean reset
 
@@ -26,7 +27,7 @@ data: $(PY)
 web:
 	cd web && npm ci && npm run build
 
-## production: one process serving the API and the built UI
+## production: one process serving the API and the built UI, on $(HOST):$(PORT)
 serve: $(PY)
 	$(PY) -m uvicorn server.main:app --host $(HOST) --port $(PORT)
 

@@ -30,9 +30,9 @@ Work on `claude/concordance-bible-app-44mnid` unless told otherwise. Push with
 
 ```sh
 make setup    # venv, download sources, build the database, build the UI
-make serve    # production: one process on 0.0.0.0:8000
+make serve    # one process on 127.0.0.1:8000 (HOST=0.0.0.0 for the tailnet)
 make dev      # API on 8000, Vite with hot reload on 5173
-make test     # 37 tests, run before every commit
+make test     # 38 tests, run before every commit
 make data     # rebuild data/concordance.db from the downloaded sources
 make clean    # build artifacts only, leaves the database alone
 make reset    # destructive: deletes the database, notes and all
