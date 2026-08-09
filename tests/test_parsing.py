@@ -189,6 +189,23 @@ class TaggedOriginals(unittest.TestCase):
         self.assertEqual(word.variant, 0)
         self.assertEqual(word.editions, "NA28+NA27+Tyn+SBL+WH+Treg")
 
+    def test_the_edition_column_stands_alone_without_a_reference_code(self):
+        # Every row in the corpus today carries a code, but the reference
+        # grammar makes it optional. With nothing to merge, the column is the
+        # only witness -- and reading the empty code would flag the word.
+        row = [
+            "Mat.3.6#06",
+            "ποταμῷ (potamō)",
+            "river",
+            "G4215=N-DSM",
+            "ποταμός=river",
+            "NA28+NA27+Tyn+SBL+WH+Treg",
+            "", "", "", "", "", "", "",
+        ]
+        word = self._one_tagnt_word(row)
+        self.assertEqual(word.variant, 0)
+        self.assertEqual(word.editions, "NA28+NA27+Tyn+SBL+WH+Treg")
+
     def test_a_received_text_only_word_is_still_flagged(self):
         row = [
             "Mat.15.6#01=k",
