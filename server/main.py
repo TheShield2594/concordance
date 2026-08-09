@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import db, refs, search
+from . import db, originals, refs, search
 
 app = FastAPI(title="Concordance", version="1.0", docs_url="/api/docs")
 
@@ -154,11 +154,27 @@ def api_search(
         "verse_total": 0,
         "topics": [],
         "notes": [],
+        "strongs": None,
     }
     if not match:
         return empty
 
     result = dict(empty)
+
+    # "G26" is not a word anybody is searching the English text for. Hand back
+    # the dictionary entry alongside the ordinary results rather than instead
+    # of them, so a search that looks like a number but isn't still works.
+    key = originals.parse_strongs(q)
+    if key:
+        row = con.execute(
+            "SELECT * FROM strongs_entries WHERE id = ?", [key]
+        ).fetchone()
+        if row is not None:
+            entry = originals.entry_row(row)
+            entry["occurrences"] = con.execute(
+                "SELECT count(*) FROM original_words WHERE strongs_base = ?", [key]
+            ).fetchone()[0]
+            result["strongs"] = entry
 
     if "verses" in wanted:
         where = "verses_fts MATCH ?"
@@ -546,6 +562,155 @@ def cross_refs(
             }
         )
     return {"ref": str(parsed), "translation": translation, "topics": out}
+
+
+# --------------------------------------------------------------------------
+# original languages
+# --------------------------------------------------------------------------
+
+@app.get("/api/interlinear/{ref}")
+def interlinear(
+    ref: str,
+    translation: str = Query("KJV"),
+    con: sqlite3.Connection = Depends(get_db),
+):
+    """One verse word by word in Hebrew, Aramaic or Greek."""
+    translation = check_translation(con, translation)
+    if translation == "ALL":
+        translation = "KJV"
+    parsed = refs.parse(ref)
+    if parsed is None or not parsed.verse_start:
+        raise HTTPException(400, "expected a reference like PHP.4.6")
+
+    row = con.execute(
+        """SELECT v.id, v.book, v.chapter, v.verse, v.translation, v.text,
+                  b.name AS book_name
+           FROM verses v JOIN books b ON b.code = v.book
+           WHERE v.book = ? AND v.chapter = ? AND v.verse = ? AND v.translation = ?""",
+        [parsed.book, parsed.chapter, parsed.verse_start, translation],
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "verse not found")
+
+    rows = originals.words_for(con, parsed.book, parsed.chapter, parsed.verse_start)
+    words = [originals.word_row(r) for r in rows]
+    lang = words[0]["lang"] if words else None
+    name, direction = originals.LANGUAGES.get(lang, ("", "ltr"))
+    return {
+        "ref": str(parsed),
+        "label": refs.label(row["book_name"], parsed),
+        "lang": lang,
+        "language": name,
+        "direction": direction,
+        "verse": verse_row(row),
+        "words": words,
+    }
+
+
+@app.get("/api/strongs/{number}")
+def strongs_entry(number: str, con: sqlite3.Connection = Depends(get_db)):
+    """A Strong's dictionary entry, with how the taggers read it in context."""
+    key = originals.parse_strongs(number)
+    if key is None:
+        raise HTTPException(400, "expected a Strong's number like H2617 or G26")
+    row = con.execute("SELECT * FROM strongs_entries WHERE id = ?", [key]).fetchone()
+    if row is None:
+        raise HTTPException(404, f"no Strong's entry {key}")
+
+    out = originals.entry_row(row)
+    out["occurrences"] = con.execute(
+        "SELECT count(*) FROM original_words WHERE strongs_base = ?", [key]
+    ).fetchone()[0]
+    # What the word actually says in the places it stands, commonest first.
+    # Strong's own "kjv_def" is a list; this is a count.
+    out["senses"] = [
+        {"gloss": r["sense"], "count": r["n"]}
+        for r in con.execute(
+            # The glosses carry the punctuation of the verse they came out of,
+            # so "love", "love," and "Love" are one sense and have to be folded
+            # together or the list is mostly commas. Brackets are left alone:
+            # they mark words the translators supplied, and trimming one end
+            # of "[the] word" leaves the other stranded. The alias is
+            # deliberately not `gloss` -- GROUP BY would bind that to the
+            # column, not to this.
+            """SELECT lower(trim(gloss, ' .,;:!?')) AS sense, count(*) AS n
+               FROM original_words
+               WHERE strongs_base = ? AND trim(gloss, ' .,;:!?') <> ''
+               GROUP BY sense ORDER BY n DESC, sense LIMIT 12""",
+            [key],
+        )
+    ]
+    return out
+
+
+@app.get("/api/strongs/{number}/verses")
+def strongs_verses(
+    number: str,
+    translation: str = Query("KJV"),
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    con: sqlite3.Connection = Depends(get_db),
+):
+    """Every verse the word stands in, Genesis to Revelation.
+
+    This is the concordance the app is named for, running off the original
+    rather than off an English spelling: one number, every place it is used,
+    however the translators happened to render it.
+    """
+    key = originals.parse_strongs(number)
+    if key is None:
+        raise HTTPException(400, "expected a Strong's number like H2617 or G26")
+    translation = check_translation(con, translation)
+    if translation == "ALL":
+        translation = "KJV"
+
+    total = con.execute(
+        """SELECT count(*) FROM (SELECT DISTINCT book, chapter, verse
+                                 FROM original_words WHERE strongs_base = ?)""",
+        [key],
+    ).fetchone()[0]
+
+    rows = con.execute(
+        """SELECT w.book, w.chapter, w.verse, b.name AS book_name,
+                  count(*) AS hits,
+                  group_concat(w.surface, ' ') AS surfaces,
+                  group_concat(w.gloss, ' / ') AS glosses,
+                  (SELECT v.text FROM verses v
+                    WHERE v.translation = ? AND v.book = w.book
+                      AND v.chapter = w.chapter AND v.verse = w.verse) AS text
+           FROM original_words w
+           JOIN books b ON b.code = w.book
+           WHERE w.strongs_base = ?
+           GROUP BY w.book, w.chapter, w.verse
+           ORDER BY b.ordinal, w.chapter, w.verse
+           LIMIT ? OFFSET ?""",
+        [translation, key, limit, offset],
+    ).fetchall()
+
+    return {
+        "id": key,
+        "translation": translation,
+        "total": total,
+        "refs": [
+            {
+                # A Psalm superscription has no English verse number; it reads
+                # as the head of verse 1, which is where the app files it.
+                "ref": f"{r['book']}.{r['chapter']}.{max(r['verse'], 1)}",
+                "label": refs.label(
+                    r["book_name"],
+                    refs.Ref(r["book"], r["chapter"], max(r["verse"], 1), max(r["verse"], 1)),
+                ),
+                "book": r["book"],
+                "chapter": r["chapter"],
+                "verse": r["verse"],
+                "hits": r["hits"],
+                "surfaces": r["surfaces"],
+                "glosses": r["glosses"],
+                "text": r["text"],
+            }
+            for r in rows
+        ],
+    }
 
 
 # --------------------------------------------------------------------------

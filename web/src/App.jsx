@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api.js'
 import { ErrorNote, Spinner } from './components.jsx'
 import { useAsync, useRoute, useStoredState } from './hooks.js'
-import { CrossRefSheet, NoteSheet } from './sheets.jsx'
+import { CrossRefSheet, InterlinearSheet, NoteSheet, StrongsSheet } from './sheets.jsx'
 import { NotesView, ReadView, SearchView, TopicsView } from './views.jsx'
 
 // Typographic marks, not emoji -- the chrome stays monochrome parchment.
@@ -32,6 +32,11 @@ export default function App() {
   // Sheets: one note editor and one cross-reference panel at a time.
   const [noteSheet, setNoteSheet] = useState(null)
   const [crossSheet, setCrossSheet] = useState(null)
+  const [originalSheet, setOriginalSheet] = useState(null)
+  // A Strong's entry can be reached from a word in the interlinear or straight
+  // from a search. It remembers which verse it came from, if any, so the way
+  // back is a link rather than a second modal stacked on the first.
+  const [strongsSheet, setStrongsSheet] = useState(null)
   // Bumped whenever notes change, so open views refetch.
   const [notesVersion, setNotesVersion] = useState(0)
 
@@ -44,6 +49,8 @@ export default function App() {
       [translation],
     ),
     crossRefs: useCallback((ref) => setCrossSheet({ ref }), []),
+    original: useCallback((ref) => setOriginalSheet({ ref }), []),
+    strongs: useCallback((number) => setStrongsSheet({ number }), []),
   }
 
   // Coming back to the Search tab should land on the search you left, not an
@@ -140,6 +147,39 @@ export default function App() {
           onRead={(ref) => {
             const [book, chapter] = ref.split('.')
             setNoteSheet(null)
+            navigate(`read/${book}/${chapter}`)
+          }}
+        />
+      )}
+
+      {originalSheet && (
+        <InterlinearSheet
+          verseRef={originalSheet.ref}
+          translation={readable}
+          onClose={() => setOriginalSheet(null)}
+          onStrongs={(number) => {
+            setOriginalSheet(null)
+            setStrongsSheet({ number, from: originalSheet.ref })
+          }}
+        />
+      )}
+
+      {strongsSheet && (
+        <StrongsSheet
+          number={strongsSheet.number}
+          translation={readable}
+          onClose={() => setStrongsSheet(null)}
+          onBack={
+            strongsSheet.from
+              ? () => {
+                  setStrongsSheet(null)
+                  setOriginalSheet({ ref: strongsSheet.from })
+                }
+              : undefined
+          }
+          backLabel={strongsSheet.from}
+          onRead={(book, chapter) => {
+            setStrongsSheet(null)
             navigate(`read/${book}/${chapter}`)
           }}
         />

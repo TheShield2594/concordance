@@ -58,6 +58,14 @@ export const api = {
   crossRefs: (ref, translation) =>
     request(`/cross-refs/${enc(ref)}?${qs({ translation })}`),
 
+  interlinear: (ref, translation) =>
+    request(`/interlinear/${enc(ref)}?${qs({ translation })}`),
+
+  strongs: (number) => request(`/strongs/${enc(number)}`),
+
+  strongsVerses: (number, { translation, limit = 25, offset = 0 } = {}) =>
+    request(`/strongs/${enc(number)}/verses?${qs({ translation, limit, offset })}`),
+
   notes: ({ q = '', ref = '' } = {}) => request(`/notes?${qs({ q, ref })}`),
 
   createNote: (note) =>

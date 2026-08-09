@@ -8,6 +8,10 @@ Sources
   KJV / ASV / BSB  scrollmapper/bible_databases (JSON, one file per translation)
   WEB              seven1m/open-bibles (USFX XML; scrollmapper has no WEB)
   Nave's Topical   BradyStephenson/bible-data (CSV, CC BY 4.0)
+  TAHOT / TAGNT    STEPBible-Data: the Hebrew, Aramaic and Greek word by word,
+                   tagged with Strong's numbers and morphology (CC BY 4.0)
+  TEHMC / TEGMC    STEPBible-Data: those morphology codes in English
+  Strong's         openscriptures/strongs: the dictionary entries themselves
 """
 from __future__ import annotations
 
@@ -35,6 +39,34 @@ BIBLE_DATA = (
     "https://raw.githubusercontent.com/BradyStephenson/bible-data/"
     "c6bf7893c78352effad1c32dcc4dc2c0ffbb4ee1"
 )
+STEPBIBLE = (
+    "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/"
+    "b86d26cdb1f51729e73b5b4eb7f7ccadc5dfba39"
+)
+STRONGS = (
+    "https://raw.githubusercontent.com/openscriptures/strongs/"
+    "0acd2f251c2d35ff8db2dece4e0593979d3ac223"
+)
+
+# STEPBible's filenames carry their own licence statement and are spelled
+# differently between the two testaments ("CC BY" against "CC-BY"), so they are
+# built here rather than written out four more times.
+TAGGED = "Translators%20Amalgamated%20OT%2BNT"
+
+
+def _tahot(span: str) -> str:
+    return (
+        f"{STEPBIBLE}/{TAGGED}/TAHOT%20{span}%20-%20Translators%20Amalgamated"
+        "%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt"
+    )
+
+
+def _tagnt(span: str) -> str:
+    return (
+        f"{STEPBIBLE}/{TAGGED}/TAGNT%20{span}%20-%20Translators%20Amalgamated"
+        "%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt"
+    )
+
 
 DOWNLOADS = [
     (
@@ -61,6 +93,58 @@ DOWNLOADS = [
         "NavesTopicalDictionary.csv",
         f"{BIBLE_DATA}/NavesTopicalDictionary.csv",
         "84f54e0c90293ed0674589cb417fa11a7dab572716735e5d626cc58645f1d49b",
+    ),
+    (
+        "TAHOT-Gen-Deu.txt",
+        _tahot("Gen-Deu"),
+        "e9b8546ee48fe0bfc57c3b70f5f40e98d96580e803526d19026224e31753368b",
+    ),
+    (
+        "TAHOT-Jos-Est.txt",
+        _tahot("Jos-Est"),
+        "195fee1dc3653bab33701f170734eb894ed647c10cd08cc61749375fe8b73775",
+    ),
+    (
+        "TAHOT-Job-Sng.txt",
+        _tahot("Job-Sng"),
+        "84e118a97e5725e3847cdfdd593873513021c790c63cc91a0d41fca2b5db2ed5",
+    ),
+    (
+        "TAHOT-Isa-Mal.txt",
+        _tahot("Isa-Mal"),
+        "f3ded203d2a74d6368932c97ae550d1d0754b271af491dc0dedf36fe3ba0bcc5",
+    ),
+    (
+        "TAGNT-Mat-Jhn.txt",
+        _tagnt("Mat-Jhn"),
+        "ab8eaaeb68e17a1dcfa34e1e9350358f22f03bc2a97244d848750ad81044bc8e",
+    ),
+    (
+        "TAGNT-Act-Rev.txt",
+        _tagnt("Act-Rev"),
+        "524e32375361e6d3fa2f7ef00b87605fdc4317a762f395651a05fdc31ad031b7",
+    ),
+    (
+        "TEHMC.txt",
+        f"{STEPBIBLE}/Morphology%20codes/TEHMC%20-%20Translators%20Expansion%20of"
+        "%20Hebrew%20Morphology%20Codes%20-%20STEPBible.org%20CC%20BY.txt",
+        "78779bea824b31d4467dec0161d547481c86f266bc39def12cd11dc7dcbe6da7",
+    ),
+    (
+        "TEGMC.txt",
+        f"{STEPBIBLE}/Morphology%20codes/TEGMC%20-%20Translators%20Expansion%20of"
+        "%20Greek%20Morphhology%20Codes%20-%20STEPBible.org%20CC%20BY.txt",
+        "5f0416f7617019a6082285214903bde569a980d5fd3b88b8d7020d944e94de82",
+    ),
+    (
+        "strongs-hebrew-dictionary.js",
+        f"{STRONGS}/hebrew/strongs-hebrew-dictionary.js",
+        "5ce6aeed551c709f49bcfa341cadf2f34bc7599b85d9de9e6ac2ecbf60fc3739",
+    ),
+    (
+        "strongs-greek-dictionary.js",
+        f"{STRONGS}/greek/strongs-greek-dictionary.js",
+        "7624ee738ae47e80f1a352223e28a26d011c9cd4898822cee52f47a010c04efd",
     ),
 ]
 

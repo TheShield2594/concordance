@@ -9,6 +9,8 @@ sys.path.insert(0, str(ROOT / "etl"))
 
 from etl import build_db  # noqa: E402
 from etl import books as bk  # noqa: E402
+from etl import originals as og  # noqa: E402
+from server import originals as sog  # noqa: E402
 from server import refs, search  # noqa: E402
 
 
@@ -115,6 +117,68 @@ class SearchQueries(unittest.TestCase):
             search.split_marks(marked),
             [{"text": "a ", "hit": False}, {"text": "hit", "hit": True}, {"text": " b", "hit": False}],
         )
+
+
+class StrongsNumbers(unittest.TestCase):
+    def test_normalises_the_padding_and_the_disambiguating_letter(self):
+        # STEPBible writes H0430G; the dictionary is keyed H430.
+        self.assertEqual(og.normalise_strongs("{H0430G}"), ("H430G", "H430"))
+        self.assertEqual(og.normalise_strongs("G1722"), ("G1722", "G1722"))
+
+    def test_no_number_is_not_a_number(self):
+        self.assertEqual(og.normalise_strongs(""), ("", ""))
+        self.assertEqual(og.normalise_strongs("HR"), ("", ""))
+
+    def test_query_forms_people_actually_type(self):
+        for typed in ("H2617", "h2617", " H 2617 ", "H02617", "H2617a"):
+            self.assertEqual(sog.parse_strongs(typed), "H2617", typed)
+        self.assertEqual(sog.parse_strongs("g26"), "G26")
+
+    def test_ordinary_words_are_not_strongs_numbers(self):
+        for typed in ("grace", "", "26", "H", "H99999", "GEN.1.1"):
+            self.assertIsNone(sog.parse_strongs(typed), typed)
+
+
+class TaggedOriginals(unittest.TestCase):
+    def test_the_braced_morpheme_is_the_word_itself(self):
+        # "to the/king": the affix is tagged too, but the king is the entry.
+        self.assertEqual(og.pick_main(["H9005", "{H4428G}"]), 1)
+        self.assertEqual(og.pick_main(["{H1254A}"]), 0)
+        # No braces at all: the last morpheme carries the sense.
+        self.assertEqual(og.pick_main(["H9001", "H1696"]), 1)
+
+    def test_parsing_codes_read_as_english(self):
+        self.assertEqual(
+            og.prettify_parsing("Function=Noun; Number=Plural"), "Noun · Plural"
+        )
+
+    def test_bracketed_glosses_do_not_leak_into_the_parsing(self):
+        # The Hebrew table explains its own codes in brackets, and those
+        # brackets contain the separators this splits on.
+        self.assertEqual(
+            og.prettify_parsing(
+                "Function=Verb; Stem=Qal (hence Action=Simple; Voice=Active); "
+                "Person=Third"
+            ),
+            "Verb · Qal · Third",
+        )
+
+    def test_lemma_comes_from_the_tag_that_matches_the_word(self):
+        # Both morphemes are tagged in one field, run together with a slash.
+        expanded = "H9003=ב=in/{H7225G=רֵאשִׁית=: beginning»first:1_beginning}"
+        self.assertEqual(
+            og._tahot_lemma(expanded, "{H7225G}"), ("רֵאשִׁית", "beginning")
+        )
+        # Asking for the prefix gets the prefix, not the noun beside it.
+        self.assertEqual(og._tahot_lemma(expanded, "H9003"), ("ב", "in"))
+
+    def test_reference_forms(self):
+        self.assertEqual(og._parse_ref("Gen.1.1#01=L"), ("GEN", 1, 1, "L"))
+        # A Hebrew or alternative versification in brackets is not the ref.
+        self.assertEqual(og._parse_ref("Psa.3.1(Psa.3.2)#04=L"), ("PSA", 3, 1, "L"))
+        self.assertEqual(og._parse_ref("Mat.15.6{15.5}#01=k"), ("MAT", 15, 6, "k"))
+        self.assertEqual(og._parse_ref("Jhn.1.1#02=NKO"), ("JHN", 1, 1, "NKO"))
+        self.assertIsNone(og._parse_ref("not a reference"))
 
 
 if __name__ == "__main__":

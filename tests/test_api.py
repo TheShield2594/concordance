@@ -172,6 +172,106 @@ class ApiTests(unittest.TestCase):
                 )
                 self.assertFalse(covers, f"{ref['ref']} covers PHP.4.6")
 
+    # -------------------------------------------------- original languages
+
+    def test_greek_interlinear(self):
+        body = self.client.get("/api/interlinear/JHN.1.1").json()
+        self.assertEqual(body["lang"], "grc")
+        self.assertEqual(body["direction"], "ltr")
+        self.assertGreaterEqual(len(body["words"]), 8)
+        self.assertEqual([w["seq"] for w in body["words"]][:3], [1, 2, 3])
+        logos = [w for w in body["words"] if w["strongs_base"] == "G3056"]
+        self.assertTrue(logos)
+        self.assertEqual(logos[0]["lemma"], "λόγος")
+        self.assertIn("Noun", logos[0]["parsing"])
+        # The English is carried alongside, never spliced into the words.
+        self.assertIn("In the beginning", body["verse"]["text"])
+
+    def test_hebrew_interlinear_reads_right_to_left(self):
+        body = self.client.get("/api/interlinear/GEN.1.1").json()
+        self.assertEqual(body["lang"], "heb")
+        self.assertEqual(body["direction"], "rtl")
+        self.assertEqual(body["words"][0]["strongs_base"], "H7225")
+        self.assertEqual(body["words"][2]["lemma"], "אֱלֹהִים")
+
+    def test_aramaic_is_marked_as_aramaic(self):
+        # Daniel 2:4b-7:28 is Aramaic, and saying so is half the point.
+        body = self.client.get("/api/interlinear/DAN.7.9").json()
+        self.assertEqual(body["lang"], "arc")
+        self.assertEqual(body["language"], "Aramaic")
+
+    def test_psalm_superscription_leads_verse_one(self):
+        # The title is verse 1 in Hebrew and unnumbered in English, so it is
+        # filed as verse 0 and belongs at the head of verse 1.
+        body = self.client.get("/api/interlinear/PSA.51.1").json()
+        self.assertIn("choirmaster", " ".join(w["gloss"] for w in body["words"]))
+        self.assertEqual([w["seq"] for w in body["words"]][:2], [1, 2])
+
+    def test_affixes_have_no_dictionary_entry(self):
+        # Prefixes are tagged H9xxx, which is STEPBible's extension: real
+        # words to show, but Strong's never numbered them.
+        # "in it" in Genesis 1:11 is a preposition with a pronoun suffix.
+        words = self.client.get("/api/interlinear/GEN.1.11").json()["words"]
+        affixes = [w for w in words if w["strongs_base"].startswith("H9")]
+        self.assertTrue(affixes)
+        self.assertFalse(any(w["in_dictionary"] for w in affixes))
+        # They are still shown, with the sense the taggers gave them.
+        self.assertTrue(all(w["gloss"] for w in affixes))
+
+    def test_interlinear_rejects_junk_and_missing_verses(self):
+        self.assertEqual(self.client.get("/api/interlinear/PHP.4").status_code, 400)
+        self.assertEqual(self.client.get("/api/interlinear/PHP.99.1").status_code, 404)
+
+    def test_strongs_entry(self):
+        body = self.client.get("/api/strongs/G26").json()
+        self.assertEqual(body["id"], "G26")
+        self.assertEqual(body["lemma"], "ἀγάπη")
+        self.assertGreater(body["occurrences"], 50)
+        # Senses are folded, so "love", "love," and "Love" count as one.
+        senses = [s["gloss"] for s in body["senses"]]
+        self.assertEqual(len(senses), len(set(senses)))
+        self.assertIn("love", senses)
+
+    def test_strongs_lookup_forgives_the_input(self):
+        for typed in ("h2617", "H02617", "H2617"):
+            self.assertEqual(
+                self.client.get(f"/api/strongs/{typed}").json()["id"], "H2617", typed
+            )
+        self.assertEqual(self.client.get("/api/strongs/grace").status_code, 400)
+        self.assertEqual(self.client.get("/api/strongs/H9999").status_code, 404)
+
+    def test_strongs_concordance_runs_in_canonical_order(self):
+        body = self.client.get("/api/strongs/H2617/verses?limit=8").json()
+        self.assertGreater(body["total"], 100)
+        self.assertEqual(len(body["refs"]), 8)
+        ordinals = []
+        con = sqlite3.connect(self.db)
+        try:
+            for ref in body["refs"]:
+                parsed = refs.parse(ref["ref"])
+                self.assertIsNotNone(parsed, ref["ref"])
+                ordinal = con.execute(
+                    "SELECT ordinal FROM books WHERE code = ?", (parsed.book,)
+                ).fetchone()[0]
+                ordinals.append((ordinal, parsed.chapter, parsed.verse_start))
+        finally:
+            con.close()
+        self.assertEqual(ordinals, sorted(ordinals))
+
+    def test_strongs_concordance_pages_without_repeating(self):
+        first = self.client.get("/api/strongs/G26/verses?limit=5").json()
+        second = self.client.get("/api/strongs/G26/verses?limit=5&offset=5").json()
+        self.assertEqual(first["total"], second["total"])
+        self.assertFalse(
+            {r["ref"] for r in first["refs"]} & {r["ref"] for r in second["refs"]}
+        )
+
+    def test_a_strongs_number_searched_returns_its_entry(self):
+        body = self.client.get("/api/search?q=H2617").json()
+        self.assertEqual(body["strongs"]["id"], "H2617")
+        # And an ordinary search is unaffected.
+        self.assertIsNone(self.client.get("/api/search?q=grace").json()["strongs"])
+
     # -------------------------------------------------------------- notes
 
     def test_note_lifecycle_and_search(self):

@@ -95,6 +95,31 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
       {loading && <Spinner />}
       <ErrorNote error={error} />
 
+      {data?.strongs && (
+        <Section title="Original language" aside={data.strongs.language}>
+          <button
+            type="button"
+            className="card card--strongs"
+            onClick={() => actions.strongs(data.strongs.id)}
+          >
+            <span className="card__head">
+              <span className="callno">{data.strongs.id}</span>
+              <span className="tag">{data.strongs.translit}</span>
+              <span className="tag" style={{ marginLeft: 'auto' }}>
+                {data.strongs.occurrences.toLocaleString()}×
+              </span>
+            </span>
+            <span className={`lemma lemma--${data.strongs.lang}`} dir={data.strongs.direction}>
+              {data.strongs.lemma}
+            </span>
+            <span className="card__text">{data.strongs.definition}</span>
+            <span className="card__actions">
+              <span className="action">Every occurrence →</span>
+            </span>
+          </button>
+        </Section>
+      )}
+
       {data?.topics?.length > 0 && (
         <Section title="Topics" aside={`${data.topics.length} matching`}>
           <div className="stack">
@@ -129,7 +154,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         </Section>
       )}
 
-      {data && (
+      {data && !(data.verse_total === 0 && data.strongs) && (
         <Section
           title="Verses"
           aside={
@@ -151,7 +176,10 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
             ) : undefined
           }
         >
-          {data.verse_total === 0 && !loading ? (
+          {/* A Strong's number never appears in the English text, so its
+              search finds no verses by design. Saying "nothing matched" over
+              a card that plainly matched something reads as a failure. */}
+          {data.verse_total === 0 && !loading && !data.strongs ? (
             <Empty mark="No verses">
               <p>Nothing matched “{query}”.</p>
             </Empty>
@@ -164,6 +192,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
                   onRead={(v) => navigate(`read/${v.book}/${v.chapter}`)}
                   onNote={(v) => actions.note(v.ref, v.translation)}
                   onCrossRefs={(v) => actions.crossRefs(v.ref)}
+                  onOriginal={(v) => actions.original(v.ref)}
                 />
               ))}
               <ErrorNote error={moreError} />
@@ -438,29 +467,40 @@ function Chapter({
             <div className="tag" style={{ marginBottom: '0.9rem' }}>
               {data.translation} · {data.verses.length} verses
             </div>
+            {/* Two gestures per verse: the number opens the original, the
+                text opens notes. The paragraph itself is no longer the
+                control, so neither one sits inside the other. */}
             {data.verses.map((verse) => (
-              <p
-                key={verse.verse}
-                className="reader__verse"
-                role="button"
-                tabIndex={0}
-                onClick={() => actions.note(verse.ref, data.translation)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    actions.note(verse.ref, data.translation)
-                  }
-                }}
-                title="Add or read notes on this verse"
-              >
-                <span className="reader__num">{verse.verse}</span>
-                {verse.text}
-                {verse.note_count > 0 && (
-                  <span
-                    className="reader__note-dot"
-                    title={`${verse.note_count} note(s)`}
-                  />
-                )}
+              <p key={verse.verse} className="reader__verse">
+                <button
+                  type="button"
+                  className="reader__num"
+                  onClick={() => actions.original(verse.ref)}
+                  title="The Hebrew, Aramaic or Greek behind this verse"
+                >
+                  {verse.verse}
+                </button>
+                <span
+                  className="reader__body"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => actions.note(verse.ref, data.translation)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      actions.note(verse.ref, data.translation)
+                    }
+                  }}
+                  title="Add or read notes on this verse"
+                >
+                  {verse.text}
+                  {verse.note_count > 0 && (
+                    <span
+                      className="reader__note-dot"
+                      title={`${verse.note_count} note(s)`}
+                    />
+                  )}
+                </span>
               </p>
             ))}
           </div>

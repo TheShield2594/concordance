@@ -403,21 +403,36 @@ select {
   margin: 0 0 0.55rem;
   font-size: 1.05rem;
   line-height: 1.65;
+  border-radius: 2px;
+}
+
+.reader__body {
   cursor: pointer;
   border-radius: 2px;
 }
 
-.reader__verse:hover {
+.reader__body:hover {
   background: rgba(92, 122, 107, 0.12);
 }
 
+/* The verse number is its own control -- it opens the original language --
+   so it has to look like the old inline marker and behave like a button. */
 .reader__num {
+  background: none;
+  border: 0;
+  padding: 0;
   font-family: var(--mono);
   font-size: 0.62rem;
   vertical-align: 0.35em;
   color: var(--oxblood);
   margin-right: 0.35rem;
   user-select: none;
+  cursor: pointer;
+}
+
+.reader__num:hover {
+  color: var(--oxblood-bright);
+  text-decoration: underline;
 }
 
 .reader__note-dot {
@@ -698,6 +713,153 @@ select {
   color: var(--parchment-dim);
   padding: 1.5rem 0;
   text-align: center;
+}
+
+/* ---------------------------------------------- the original languages */
+
+:root {
+  --hebrew: 'Noto Serif Hebrew', 'SBL Hebrew', 'Times New Roman', serif;
+}
+
+/* Word slips, laid out in reading order: right to left for Hebrew and
+   Aramaic, left to right for Greek. `dir` on the container does the work, so
+   nothing here has to know which language it is looking at. */
+.interlinear {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+
+.slip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+  background: var(--paper);
+  color: var(--ink-on-paper);
+  border: 0;
+  /* The spine stays on the left in both scripts: it is the same mark that
+     runs down every card in the app, not a reading-order cue. */
+  border-left: 3px solid var(--oxblood);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: var(--shadow-card);
+  padding: 0.5rem 0.55rem;
+  cursor: pointer;
+}
+
+.slip:disabled {
+  cursor: default;
+  border-left-color: var(--ink-on-paper-dim);
+}
+
+.slip:hover:not(:disabled) {
+  background: #fff;
+}
+
+/* Carried by the Received Text alone. Present, because the KJV translates it,
+   but not asserted as firmly as the rest. */
+.slip--variant {
+  opacity: 0.62;
+  border-left-style: dashed;
+}
+
+.slip__word {
+  font-size: 1.35rem;
+  line-height: 1.5;
+}
+
+.slip__word--heb,
+.slip__word--arc {
+  font-family: var(--hebrew);
+  font-size: 1.5rem;
+}
+
+.slip__translit {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--ink-on-paper-dim);
+}
+
+.slip__gloss {
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.slip__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.slip__parsing {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-on-paper-dim);
+  line-height: 1.3;
+}
+
+.callno--sm {
+  font-size: 0.6rem;
+  padding: 0.15em 0.35em;
+}
+
+/* The dictionary form, set large -- it is the thing being looked up. */
+.lemma {
+  font-size: 1.7rem;
+  line-height: 1.6;
+  margin: 0.1rem 0 0.4rem;
+}
+
+.lemma--heb,
+.lemma--arc {
+  font-family: var(--hebrew);
+  font-size: 1.9rem;
+}
+
+/* How the taggers actually rendered the word, commonest first. Each sense is
+   its own chip: run together in a row they read as one long string. */
+.senses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(36, 28, 23, 0.12);
+}
+
+.senses .tag {
+  border: 1px solid rgba(92, 122, 107, 0.45);
+  border-radius: 999px;
+  padding: 0.16em 0.55em;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.quote__label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* A whole card that is one button: the Strong's hit on the search screen. */
+.card--strongs {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+}
+
+.muted--foot {
+  font-size: 0.8rem;
+  margin-top: 0.8rem;
 }
 
 @media (min-width: 40rem) {
