@@ -5,69 +5,71 @@ what Nave's Topical Bible already uses for its references and what the app's
 "call number" reference format is built on: BOK.C.V -> PHP.4.6
 """
 
-# (code, display name, alternate names found in source datasets)
+# (code, display name, alternate names found in source datasets -- and the
+# standard abbreviations people type into search, which resolve() serves too.
+# Matching ignores case, spaces and dots, so "1Thess" covers "1 Thess." as well.)
 BOOKS = [
     ("GEN", "Genesis", []),
-    ("EXO", "Exodus", []),
+    ("EXO", "Exodus", ["Exod", "Ex"]),
     ("LEV", "Leviticus", []),
     ("NUM", "Numbers", []),
-    ("DEU", "Deuteronomy", []),
-    ("JOS", "Joshua", []),
-    ("JDG", "Judges", []),
+    ("DEU", "Deuteronomy", ["Deut", "Dt"]),
+    ("JOS", "Joshua", ["Josh"]),
+    ("JDG", "Judges", ["Judg"]),
     ("RUT", "Ruth", []),
-    ("1SA", "1 Samuel", ["I Samuel", "First Samuel", "1Samuel"]),
-    ("2SA", "2 Samuel", ["II Samuel", "Second Samuel", "2Samuel"]),
-    ("1KI", "1 Kings", ["I Kings", "First Kings", "1Kings"]),
-    ("2KI", "2 Kings", ["II Kings", "Second Kings", "2Kings"]),
-    ("1CH", "1 Chronicles", ["I Chronicles", "First Chronicles", "1Chronicles"]),
-    ("2CH", "2 Chronicles", ["II Chronicles", "Second Chronicles", "2Chronicles"]),
+    ("1SA", "1 Samuel", ["I Samuel", "First Samuel", "1Samuel", "1Sam"]),
+    ("2SA", "2 Samuel", ["II Samuel", "Second Samuel", "2Samuel", "2Sam"]),
+    ("1KI", "1 Kings", ["I Kings", "First Kings", "1Kings", "1Kgs", "1Kin"]),
+    ("2KI", "2 Kings", ["II Kings", "Second Kings", "2Kings", "2Kgs", "2Kin"]),
+    ("1CH", "1 Chronicles", ["I Chronicles", "First Chronicles", "1Chronicles", "1Chr", "1Chron"]),
+    ("2CH", "2 Chronicles", ["II Chronicles", "Second Chronicles", "2Chronicles", "2Chr", "2Chron"]),
     ("EZR", "Ezra", []),
     ("NEH", "Nehemiah", []),
-    ("EST", "Esther", []),
+    ("EST", "Esther", ["Esth"]),
     ("JOB", "Job", []),
-    ("PSA", "Psalms", ["Psalm"]),
-    ("PRO", "Proverbs", []),
-    ("ECC", "Ecclesiastes", []),
-    ("SNG", "Song of Solomon", ["Song of Songs", "Canticles"]),
+    ("PSA", "Psalms", ["Psalm", "Ps", "Pss"]),
+    ("PRO", "Proverbs", ["Prov"]),
+    ("ECC", "Ecclesiastes", ["Eccl", "Eccles"]),
+    ("SNG", "Song of Solomon", ["Song of Songs", "Canticles", "Song", "Cant"]),
     ("ISA", "Isaiah", []),
     ("JER", "Jeremiah", []),
     ("LAM", "Lamentations", []),
-    ("EZK", "Ezekiel", []),
+    ("EZK", "Ezekiel", ["Ezek"]),
     ("DAN", "Daniel", []),
     ("HOS", "Hosea", []),
     ("JOL", "Joel", []),
     ("AMO", "Amos", []),
-    ("OBA", "Obadiah", []),
+    ("OBA", "Obadiah", ["Obad"]),
     ("JON", "Jonah", []),
     ("MIC", "Micah", []),
     ("NAM", "Nahum", []),
     ("HAB", "Habakkuk", []),
-    ("ZEP", "Zephaniah", []),
+    ("ZEP", "Zephaniah", ["Zeph"]),
     ("HAG", "Haggai", []),
-    ("ZEC", "Zechariah", []),
+    ("ZEC", "Zechariah", ["Zech"]),
     ("MAL", "Malachi", []),
-    ("MAT", "Matthew", []),
-    ("MRK", "Mark", []),
-    ("LUK", "Luke", []),
-    ("JHN", "John", []),
+    ("MAT", "Matthew", ["Matt", "Mt"]),
+    ("MRK", "Mark", ["Mk"]),
+    ("LUK", "Luke", ["Lk"]),
+    ("JHN", "John", ["Jn"]),
     ("ACT", "Acts", ["Acts of the Apostles"]),
     ("ROM", "Romans", []),
-    ("1CO", "1 Corinthians", ["I Corinthians", "First Corinthians"]),
-    ("2CO", "2 Corinthians", ["II Corinthians", "Second Corinthians"]),
+    ("1CO", "1 Corinthians", ["I Corinthians", "First Corinthians", "1Cor"]),
+    ("2CO", "2 Corinthians", ["II Corinthians", "Second Corinthians", "2Cor"]),
     ("GAL", "Galatians", []),
     ("EPH", "Ephesians", []),
-    ("PHP", "Philippians", []),
+    ("PHP", "Philippians", ["Phil"]),
     ("COL", "Colossians", []),
-    ("1TH", "1 Thessalonians", ["I Thessalonians", "First Thessalonians"]),
-    ("2TH", "2 Thessalonians", ["II Thessalonians", "Second Thessalonians"]),
-    ("1TI", "1 Timothy", ["I Timothy", "First Timothy"]),
-    ("2TI", "2 Timothy", ["II Timothy", "Second Timothy"]),
+    ("1TH", "1 Thessalonians", ["I Thessalonians", "First Thessalonians", "1Thess", "1Thes"]),
+    ("2TH", "2 Thessalonians", ["II Thessalonians", "Second Thessalonians", "2Thess", "2Thes"]),
+    ("1TI", "1 Timothy", ["I Timothy", "First Timothy", "1Tim"]),
+    ("2TI", "2 Timothy", ["II Timothy", "Second Timothy", "2Tim"]),
     ("TIT", "Titus", []),
-    ("PHM", "Philemon", []),
+    ("PHM", "Philemon", ["Phlm", "Philem"]),
     ("HEB", "Hebrews", []),
     ("JAS", "James", []),
-    ("1PE", "1 Peter", ["I Peter", "First Peter"]),
-    ("2PE", "2 Peter", ["II Peter", "Second Peter"]),
+    ("1PE", "1 Peter", ["I Peter", "First Peter", "1Pet"]),
+    ("2PE", "2 Peter", ["II Peter", "Second Peter", "2Pet"]),
     ("1JN", "1 John", ["I John", "First John", "1Jhn"]),
     ("2JN", "2 John", ["II John", "Second John"]),
     ("3JN", "3 John", ["III John", "Third John"]),
@@ -116,11 +118,15 @@ _CODE_FIXUPS = {
 
 
 def resolve(token: str):
-    """Map a book code or spelled-out book name to a canonical code."""
+    """Map a book code, spelled-out name or abbreviation to a canonical code."""
     t = token.strip()
     upper = t.upper().replace(".", "")
     if upper in ORDINAL:
         return upper
     if upper in _CODE_FIXUPS:
         return _CODE_FIXUPS[upper]
+    # A code typed with a space -- "1 Jn", "2 Sa" -- is still the code.
+    spaceless = _norm(t).upper()
+    if spaceless in ORDINAL:
+        return spaceless
     return _BY_NAME.get(_norm(t))

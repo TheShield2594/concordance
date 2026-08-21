@@ -89,11 +89,23 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
             Search the text of four translations, the topics of Nave's, and your own
             notes — all at once.
           </p>
+          <p>
+            A reference — John 3:16, PHP.4.6 — or a Strong's number jumps straight
+            to it.
+          </p>
         </Empty>
       )}
 
       {loading && <Spinner />}
       <ErrorNote error={error} />
+
+      {data?.reference && (
+        <ReferenceCard
+          reference={data.reference}
+          navigate={navigate}
+          actions={actions}
+        />
+      )}
 
       {data?.strongs && (
         <Section title="Original language" aside={data.strongs.language}>
@@ -154,7 +166,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         </Section>
       )}
 
-      {data && !(data.verse_total === 0 && data.strongs) && (
+      {data && !(data.verse_total === 0 && (data.strongs || data.reference)) && (
         <Section
           title="Verses"
           aside={
@@ -176,10 +188,11 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
             ) : undefined
           }
         >
-          {/* A Strong's number never appears in the English text, so its
-              search finds no verses by design. Saying "nothing matched" over
-              a card that plainly matched something reads as a failure. */}
-          {data.verse_total === 0 && !loading && !data.strongs ? (
+          {/* A Strong's number or a verse reference never appears in the
+              English text, so its search finds no verses by design. Saying
+              "nothing matched" over a card that plainly matched something
+              reads as a failure. */}
+          {data.verse_total === 0 && !loading && !data.strongs && !data.reference ? (
             <Empty mark="No verses">
               <p>Nothing matched “{query}”.</p>
             </Empty>
@@ -211,6 +224,79 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         </Section>
       )}
     </div>
+  )
+}
+
+/**
+ * The verse a reference-shaped search names, set above the text hits the way
+ * a Strong's entry is. A whole-chapter reference is a doorway with no text;
+ * a verse or range brings its text along, one line per translation on file.
+ */
+function ReferenceCard({ reference, navigate, actions }) {
+  const single = reference.verse_start > 0
+  const range = reference.verse_end > reference.verse_start
+  const firstRef = `${reference.book}.${reference.chapter}.${reference.verse_start}`
+  const read = () =>
+    navigate(
+      `read/${reference.book}/${reference.chapter}${
+        single ? `?v=${reference.verse_start}` : ''
+      }`,
+    )
+
+  return (
+    <Section title="Reference" aside={reference.book_name}>
+      <article className="card">
+        <div className="card__head">
+          <CallNumber onClick={read} title={`Read ${reference.label}`}>
+            {reference.ref}
+          </CallNumber>
+          <span className="tag">{reference.label}</span>
+        </div>
+        {reference.verses.length > 0 && (
+          <div className="stack">
+            {reference.verses.map((verse) => (
+              <p key={`${verse.translation}-${verse.id}`} className="card__text">
+                {verse.text}{' '}
+                <span className="tag">
+                  {range ? `v${verse.verse} · ` : ''}
+                  {verse.translation}
+                </span>
+              </p>
+            ))}
+          </div>
+        )}
+        <div className="card__actions">
+          <button type="button" className="action" onClick={read}>
+            Read chapter
+          </button>
+          {single && (
+            <>
+              <button
+                type="button"
+                className="action action--verdigris"
+                onClick={() => actions.note(firstRef)}
+              >
+                Add note
+              </button>
+              <button
+                type="button"
+                className="action action--verdigris"
+                onClick={() => actions.crossRefs(firstRef)}
+              >
+                Cross-refs
+              </button>
+              <button
+                type="button"
+                className="action"
+                onClick={() => actions.original(firstRef)}
+              >
+                Original
+              </button>
+            </>
+          )}
+        </div>
+      </article>
+    </Section>
   )
 }
 

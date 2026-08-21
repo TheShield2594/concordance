@@ -29,6 +29,14 @@ class BookCodes(unittest.TestCase):
         self.assertEqual(bk.resolve("Song of Songs"), "SNG")
         self.assertIsNone(bk.resolve("Maccabees"))
 
+    def test_resolves_the_abbreviations_people_type(self):
+        # "Phil" is Philippians by convention, never Philemon (that's Phlm).
+        for typed, code in [
+            ("Matt", "MAT"), ("Mt", "MAT"), ("Phil", "PHP"), ("Phlm", "PHM"),
+            ("1 Thess.", "1TH"), ("Ps", "PSA"), ("Song", "SNG"), ("1 Jn", "1JN"),
+        ]:
+            self.assertEqual(bk.resolve(typed), code, typed)
+
     def test_fixes_source_typos(self):
         # Nave's contains one "1JHN" among 76k references.
         self.assertEqual(bk.resolve("1JHN"), "1JN")
@@ -88,6 +96,40 @@ class CallNumbers(unittest.TestCase):
             refs.label("Philippians", refs.Ref("PHP", 4, 6, 7)), "Philippians 4:6-7"
         )
         self.assertEqual(refs.label("Numbers", refs.Ref("NUM", 17, 0, 0)), "Numbers 17")
+
+
+class HumanReferences(unittest.TestCase):
+    def test_typed_forms_come_back_canonical(self):
+        for typed, want in [
+            ("John 3:16", "JHN.3.16"),
+            ("john 3.16", "JHN.3.16"),
+            ("Php 4:6", "PHP.4.6"),
+            ("Phil 4:6-7", "PHP.4.6-7"),
+            ("1 Thess 4:16", "1TH.4.16"),
+            ("Psalm 23", "PSA.23"),
+            ("Song of Solomon 2:1", "SNG.2.1"),
+            ("1 Sam. 17:4", "1SA.17.4"),
+            ("matt 5 3", "MAT.5.3"),
+            ("rev 21:3–4", "REV.21.3-4"),  # the dash a phone keyboard supplies
+            ("PHP.4.6", "PHP.4.6"),  # the call number itself still works
+            ("JOH.3.16", "JHN.3.16"),  # and a near-miss code is canonicalised
+        ]:
+            self.assertEqual(str(refs.parse_human(typed)), want, typed)
+
+    def test_what_only_looks_like_a_reference_is_not_one(self):
+        for typed in (
+            "",
+            "love",
+            "john",  # a book with no chapter is a word, not a reference
+            "grace 4:6",  # a chapter and verse under a word that names no book
+            "the 12 tribes",
+            "H2617",  # Strong's numbers keep their own lane
+            "G26",
+            "3:16",
+            "john 3:16-2",  # a range running backwards
+            "PHP.99999999999999999999.1",
+        ):
+            self.assertIsNone(refs.parse_human(typed), typed)
 
 
 class SearchQueries(unittest.TestCase):
