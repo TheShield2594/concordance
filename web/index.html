@@ -6,9 +6,28 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#1C2333" />
+    <meta
+      name="theme-color"
+      content="#f8f7f4"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#0a0a0a"
+      media="(prefers-color-scheme: dark)"
+    />
     <meta name="description" content="Concordance — personal Bible study" />
     <title>Concordance</title>
+    <script>
+      // The stylesheet keys its dark tokens off a `dark` class on <html>;
+      // keep that class in step with the system preference. Inline so the
+      // first paint is already the right theme.
+      const scheme = window.matchMedia('(prefers-color-scheme: dark)')
+      const applyScheme = () =>
+        document.documentElement.classList.toggle('dark', scheme.matches)
+      applyScheme()
+      scheme.addEventListener('change', applyScheme)
+    </script>
   </head>
   <body>
     <div id="root"></div>

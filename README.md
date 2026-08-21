@@ -209,17 +209,19 @@ Quoted phrases survive as phrases.
 
 ## The look
 
-Ink indigo `#1C2333` underneath, parchment `#E8DCC4` on top of it, oxblood `#7A2E2E`
-for the primary accent, verdigris `#5C7A6B` for the secondary, paper `#F2ECD9` for
-cards. Fraunces sets headings, Source Serif 4 carries scripture, IBM Plex Mono does
-every reference, label, and piece of chrome.
+Warm off-white `#F8F7F4` underneath, near-navy ink `#1A1F2E` on it, sage `#7C9082`
+for the primary accent, moss `#A0AA88` for the secondary, white for cards — and the
+whole set mirrored on near-black when the system asks for dark. Signifier sets
+headings and scripture where it's installed (it's a licensed face, so Source Serif 4
+stands behind it), Antic does the UI text, JetBrains Mono does every reference,
+label, and piece of chrome.
 
 The reference stamp is the whole visual idea: a dark badge with light monospace type,
 the way a call number sits on a spine. It looks the same on a result card, in a
 sheet, in the reader header, and on the pager buttons, and once you've read a few
 screens you stop reading the words around it and just look for the stamp. Cards are
-paper with an oxblood spine down the left. Verdigris marks the secondary track:
-topics, notes, cross-references.
+white with a sage spine down the left. Moss marks the secondary track: topics,
+notes, cross-references.
 
 Built mobile first, four tabs along the bottom, and the tab strip stays under the
 text column on a wide screen instead of drifting to the corners.

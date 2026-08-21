@@ -101,15 +101,23 @@ verse text.
 
 ## Design system
 
-Tokens live at the top of `web/src/styles.css`: ink indigo `#1C2333`, parchment
-`#E8DCC4`, oxblood `#7A2E2E`, verdigris `#5C7A6B`, paper `#F2ECD9`. Fraunces for
-headings, Source Serif 4 for scripture, IBM Plex Mono for references and chrome.
-Use the variables, don't hardcode hex.
+Tokens live at the top of `web/src/styles.css`, shadcn-style names: `--background`
+`#F8F7F4`, `--foreground` `#1A1F2E`, `--card` white, `--primary` sage `#7C9082`,
+`--muted` `#E8E6E1`, `--destructive` `#C73E3A`. A `.dark` block mirrors the set on
+near-black; an inline script in `index.html` keeps the `dark` class on `<html>` in
+step with the system preference, so every colour has to work in both themes — which
+is why everything goes through the variables. Don't hardcode hex.
+
+Signifier for headings and scripture (licensed, so it only renders where the device
+has it — Source Serif 4 is bundled behind it), Antic for UI text, JetBrains Mono for
+references and chrome. Sage at `#7C9082` misses 4.5:1 as small text on white: type
+wears `--primary-strong`, surfaces wear `--primary`.
 
 Every reference renders through the `CallNumber` component: dark badge, light
-monospace, identical everywhere. It's the signature element, so keep it consistent —
-Strong's numbers wear the same stamp. Oxblood marks the primary track (scripture and
-the original languages), verdigris the secondary (topics, notes, cross-references).
+monospace, identical everywhere — the `--stamp` tokens keep it a dark badge in the
+dark theme too. It's the signature element, so keep it consistent — Strong's numbers
+wear the same stamp. Sage marks the primary track (scripture and the original
+languages), moss `--moss` the secondary (topics, notes, cross-references).
 Fonts are bundled through fontsource; nothing loads from a CDN. Source Serif 4 covers
 Greek; pointed Hebrew needs Noto Serif Hebrew, which is why it is imported separately.
 
