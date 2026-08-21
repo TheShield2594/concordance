@@ -199,6 +199,8 @@ class ApiTests(unittest.TestCase):
                 # form PHP.4, which is not a cross-reference but a self-reference
                 parsed = refs.parse(ref["ref"])
                 self.assertIsNotNone(parsed, ref["ref"])
+                # the UI carries the verse into the reader
+                self.assertEqual(ref["verse_start"], parsed.verse_start)
                 covers = (
                     parsed.book == "PHP"
                     and parsed.chapter == 4

@@ -612,6 +612,7 @@ def cross_refs(
                         ),
                         "book": s["book"],
                         "chapter": s["chapter"],
+                        "verse_start": s["verse_start"],
                         "text": s["text"],
                     }
                     for s in siblings

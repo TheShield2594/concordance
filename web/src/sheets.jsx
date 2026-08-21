@@ -333,7 +333,7 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
             {refs.map((ref) => (
               <article key={ref.ref} className="card">
                 <div className="card__head">
-                  <CallNumber onClick={() => onRead(ref.book, ref.chapter)}>
+                  <CallNumber onClick={() => onRead(ref.book, ref.chapter, ref.verse)}>
                     {ref.ref}
                   </CallNumber>
                   <span className="tag">{ref.label}</span>
@@ -399,7 +399,9 @@ export function CrossRefSheet({ verseRef, translation, onClose, onRead, onTopic 
               {group.refs.map((ref) => (
                 <article key={ref.ref} className="card card--verdigris">
                   <div className="card__head">
-                    <CallNumber onClick={() => onRead(ref.book, ref.chapter)}>
+                    <CallNumber
+                      onClick={() => onRead(ref.book, ref.chapter, ref.verse_start)}
+                    >
                       {ref.ref}
                     </CallNumber>
                     <span className="tag">{data.translation}</span>

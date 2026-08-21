@@ -474,6 +474,22 @@ select {
   border-radius: 2px;
 }
 
+/* Arriving from a search hit, topic, note or cross-reference marks the verse:
+   a sage wash that holds for a beat, then fades once you've found your place. */
+.reader__verse--focus {
+  animation: verse-focus 2.4s ease-out 0.2s backwards;
+}
+
+@keyframes verse-focus {
+  0%,
+  30% {
+    background: color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 .reader__body:hover {
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }

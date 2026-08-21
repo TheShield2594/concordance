@@ -202,7 +202,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
                 <VerseCard
                   key={`${verse.translation}-${verse.id}`}
                   verse={verse}
-                  onRead={(v) => navigate(`read/${v.book}/${v.chapter}`)}
+                  onRead={(v) => navigate(`read/${v.book}/${v.chapter}?v=${v.verse}`)}
                   onNote={(v) => actions.note(v.ref, v.translation)}
                   onCrossRefs={(v) => actions.crossRefs(v.ref)}
                   onOriginal={(v) => actions.original(v.ref)}
@@ -356,6 +356,13 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
     [topicId, readable],
   )
 
+  // A reference that names a verse takes the reader to it; a whole-chapter
+  // reference just opens the chapter.
+  const readTarget = (ref) =>
+    `read/${ref.book}/${ref.chapter}${
+      ref.verse_start > 0 ? `?v=${ref.verse_start}` : ''
+    }`
+
   return (
     <div className="view">
       <div className="section__head">
@@ -379,7 +386,7 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
                 {group.refs.map((ref, j) => (
                   <article key={`${ref.ref}-${j}`} className="card">
                     <div className="card__head">
-                      <CallNumber onClick={() => navigate(`read/${ref.book}/${ref.chapter}`)}>
+                      <CallNumber onClick={() => navigate(readTarget(ref))}>
                         {ref.ref}
                       </CallNumber>
                       <span className="tag">{ref.label}</span>
@@ -389,7 +396,7 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
                       <button
                         type="button"
                         className="action"
-                        onClick={() => navigate(`read/${ref.book}/${ref.chapter}`)}
+                        onClick={() => navigate(readTarget(ref))}
                       >
                         Read chapter
                       </button>
@@ -433,6 +440,7 @@ export function ReadView({ route, navigate, readable, chooseReading, meta, actio
     <Chapter
       book={book}
       chapter={Number(chapter)}
+      focus={Number(route.query.v) || 0}
       translation={readable}
       setTranslation={chooseReading}
       chips={chips}
@@ -505,6 +513,7 @@ function ChapterPicker({ meta, book, navigate }) {
 function Chapter({
   book,
   chapter,
+  focus,
   translation,
   setTranslation,
   chips,
@@ -520,6 +529,15 @@ function Chapter({
   useEffect(() => {
     window.scrollTo({ top: 0 })
   }, [book, chapter])
+
+  // A link that named a verse carries the reader down to it once the chapter
+  // arrives; the wash that marks it is the --focus class on the verse itself.
+  useEffect(() => {
+    if (!data || !focus) return
+    document
+      .getElementById(`verse-${focus}`)
+      ?.scrollIntoView({ block: 'center' })
+  }, [data, focus])
 
   return (
     <div className="view">
@@ -557,7 +575,15 @@ function Chapter({
                 text opens notes. The paragraph itself is no longer the
                 control, so neither one sits inside the other. */}
             {data.verses.map((verse) => (
-              <p key={verse.verse} className="reader__verse">
+              <p
+                key={verse.verse}
+                id={`verse-${verse.verse}`}
+                className={
+                  verse.verse === focus
+                    ? 'reader__verse reader__verse--focus'
+                    : 'reader__verse'
+                }
+              >
                 <button
                   type="button"
                   className="reader__num"
@@ -678,7 +704,9 @@ export function NotesView({ navigate, actions, notesVersion }) {
               <button
                 type="button"
                 className="action"
-                onClick={() => navigate(`read/${note.book}/${note.chapter}`)}
+                onClick={() =>
+                  navigate(`read/${note.book}/${note.chapter}?v=${note.verse}`)
+                }
               >
                 Read chapter
               </button>
