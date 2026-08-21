@@ -13,7 +13,9 @@
   --popover: #ffffff;
   --popover-foreground: #1a1f2e;
   --primary: #7c9082;
-  --primary-foreground: #ffffff;
+  /* Dark, not white: the type that sits on sage is small mono, and white on
+     #7c9082 is 3.4:1 -- short of the 4.5:1 it needs. */
+  --primary-foreground: #1a1f2e;
   --secondary: #ced4bf;
   --secondary-foreground: #1a1f2e;
   --muted: #e8e6e1;
@@ -36,6 +38,9 @@
      type-sized wears --primary-strong instead. --moss is the secondary track
      (topics, notes, cross-references), the counterpart of the primary sage. */
   --primary-strong: #5c7061;
+  /* --primary-foreground flips illegible on the darker hover sage, so hovered
+     primary surfaces carry their own foreground. */
+  --primary-strong-foreground: #ffffff;
   --moss: #a0aa88;
 
   /* The call-number stamp stays a dark badge with light type in both themes;
@@ -85,6 +90,7 @@
   --shadow-color: #000000;
 
   --primary-strong: #a5b8ab;
+  --primary-strong-foreground: #000000;
   --moss: #5a6b5e;
 
   --stamp: #1a1a1a;
@@ -487,8 +493,9 @@ select {
   cursor: pointer;
 }
 
+/* The underline carries the hover: brightening to --primary would drop the
+   number under 4.5:1 on the white card. */
 .reader__num:hover {
-  color: var(--primary);
   text-decoration: underline;
 }
 
@@ -647,6 +654,7 @@ select {
 .btn--primary:hover {
   background: var(--primary-strong);
   border-color: var(--primary-strong);
+  color: var(--primary-strong-foreground);
 }
 
 .btn--danger {
