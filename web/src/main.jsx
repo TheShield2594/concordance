@@ -1,13 +1,15 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 
-import '@fontsource-variable/fraunces'
+import '@fontsource/antic'
+// Behind Signifier, which is licensed and only renders where the device has
+// it: Source Serif 4 ships the Greek subset, so the New Testament stays
+// covered whichever serif wins.
 import '@fontsource-variable/source-serif-4'
-import '@fontsource/ibm-plex-mono/400.css'
-import '@fontsource/ibm-plex-mono/500.css'
-// Source Serif 4 ships the Greek subset, so the New Testament is already
-// covered; pointed Hebrew is not, and falls back to whatever the device has
-// unless something with niqqud is bundled alongside it.
+import '@fontsource/jetbrains-mono/400.css'
+import '@fontsource/jetbrains-mono/500.css'
+// Pointed Hebrew falls back to whatever the device has unless something with
+// niqqud is bundled alongside it.
 import '@fontsource/noto-serif-hebrew/hebrew-400.css'
 import './styles.css'
 
