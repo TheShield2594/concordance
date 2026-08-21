@@ -155,11 +155,20 @@ def api_search(
         "topics": [],
         "notes": [],
         "strongs": None,
+        "reference": None,
     }
     if not match:
         return empty
 
     result = dict(empty)
+
+    # "John 3:16" is not a text query either: a reference-shaped search hands
+    # back the verse itself as a card above the text hits -- alongside the
+    # ordinary results, not instead of them, the same shape as the Strong's
+    # entry below, so a query that merely looks like a reference still runs.
+    parsed = refs.parse_human(q)
+    if parsed is not None:
+        result["reference"] = reference_card(con, parsed, translation)
 
     # "G26" is not a word anybody is searching the English text for. Hand back
     # the dictionary entry alongside the ordinary results rather than instead
@@ -228,6 +237,54 @@ def api_search(
         ]
 
     return result
+
+
+def reference_card(
+    con: sqlite3.Connection, parsed: refs.Ref, translation: str
+) -> dict | None:
+    """The verse (or chapter) a reference-shaped query names, if it exists.
+
+    A whole-chapter reference carries no text -- the card is a doorway into the
+    reader, not the chapter itself. A verse or range brings its text along, in
+    the searched translation or all of them, capped so PSA.119.1-176 across
+    four translations doesn't arrive as one enormous card.
+    """
+    book = con.execute(
+        "SELECT name FROM books WHERE code = ?", [parsed.book]
+    ).fetchone()
+    if book is None:
+        return None
+    out = {
+        "ref": str(parsed),
+        "label": refs.label(book["name"], parsed),
+        "book": parsed.book,
+        "book_name": book["name"],
+        "chapter": parsed.chapter,
+        "verse_start": parsed.verse_start,
+        "verse_end": parsed.verse_end,
+        "verses": [],
+    }
+    if not parsed.verse_start:
+        exists = con.execute(
+            "SELECT 1 FROM verses WHERE book = ? AND chapter = ? LIMIT 1",
+            [parsed.book, parsed.chapter],
+        ).fetchone()
+        return out if exists else None
+    sql = """SELECT v.id, v.book, v.chapter, v.verse, v.translation, v.text,
+                    b.name AS book_name
+             FROM verses v JOIN books b ON b.code = v.book
+             WHERE v.book = ? AND v.chapter = ? AND v.verse BETWEEN ? AND ?"""
+    params: list = [parsed.book, parsed.chapter, parsed.verse_start, parsed.verse_end]
+    if translation != "ALL":
+        sql += " AND v.translation = ?"
+        params.append(translation)
+    rows = con.execute(
+        sql + " ORDER BY v.verse, v.translation LIMIT 20", params
+    ).fetchall()
+    if not rows:
+        return None
+    out["verses"] = [verse_row(r) for r in rows]
+    return out
 
 
 def topic_matches(
@@ -555,6 +612,7 @@ def cross_refs(
                         ),
                         "book": s["book"],
                         "chapter": s["chapter"],
+                        "verse_start": s["verse_start"],
                         "text": s["text"],
                     }
                     for s in siblings

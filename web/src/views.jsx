@@ -89,11 +89,23 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
             Search the text of four translations, the topics of Nave's, and your own
             notes — all at once.
           </p>
+          <p>
+            A reference — John 3:16, PHP.4.6 — or a Strong's number jumps straight
+            to it.
+          </p>
         </Empty>
       )}
 
       {loading && <Spinner />}
       <ErrorNote error={error} />
+
+      {data?.reference && (
+        <ReferenceCard
+          reference={data.reference}
+          navigate={navigate}
+          actions={actions}
+        />
+      )}
 
       {data?.strongs && (
         <Section title="Original language" aside={data.strongs.language}>
@@ -154,7 +166,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         </Section>
       )}
 
-      {data && !(data.verse_total === 0 && data.strongs) && (
+      {data && !(data.verse_total === 0 && (data.strongs || data.reference)) && (
         <Section
           title="Verses"
           aside={
@@ -176,10 +188,11 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
             ) : undefined
           }
         >
-          {/* A Strong's number never appears in the English text, so its
-              search finds no verses by design. Saying "nothing matched" over
-              a card that plainly matched something reads as a failure. */}
-          {data.verse_total === 0 && !loading && !data.strongs ? (
+          {/* A Strong's number or a verse reference never appears in the
+              English text, so its search finds no verses by design. Saying
+              "nothing matched" over a card that plainly matched something
+              reads as a failure. */}
+          {data.verse_total === 0 && !loading && !data.strongs && !data.reference ? (
             <Empty mark="No verses">
               <p>Nothing matched “{query}”.</p>
             </Empty>
@@ -189,7 +202,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
                 <VerseCard
                   key={`${verse.translation}-${verse.id}`}
                   verse={verse}
-                  onRead={(v) => navigate(`read/${v.book}/${v.chapter}`)}
+                  onRead={(v) => navigate(`read/${v.book}/${v.chapter}?v=${v.verse}`)}
                   onNote={(v) => actions.note(v.ref, v.translation)}
                   onCrossRefs={(v) => actions.crossRefs(v.ref)}
                   onOriginal={(v) => actions.original(v.ref)}
@@ -211,6 +224,79 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         </Section>
       )}
     </div>
+  )
+}
+
+/**
+ * The verse a reference-shaped search names, set above the text hits the way
+ * a Strong's entry is. A whole-chapter reference is a doorway with no text;
+ * a verse or range brings its text along, one line per translation on file.
+ */
+function ReferenceCard({ reference, navigate, actions }) {
+  const single = reference.verse_start > 0
+  const range = reference.verse_end > reference.verse_start
+  const firstRef = `${reference.book}.${reference.chapter}.${reference.verse_start}`
+  const read = () =>
+    navigate(
+      `read/${reference.book}/${reference.chapter}${
+        single ? `?v=${reference.verse_start}` : ''
+      }`,
+    )
+
+  return (
+    <Section title="Reference" aside={reference.book_name}>
+      <article className="card">
+        <div className="card__head">
+          <CallNumber onClick={read} title={`Read ${reference.label}`}>
+            {reference.ref}
+          </CallNumber>
+          <span className="tag">{reference.label}</span>
+        </div>
+        {reference.verses.length > 0 && (
+          <div className="stack">
+            {reference.verses.map((verse) => (
+              <p key={`${verse.translation}-${verse.id}`} className="card__text">
+                {verse.text}{' '}
+                <span className="tag">
+                  {range ? `v${verse.verse} · ` : ''}
+                  {verse.translation}
+                </span>
+              </p>
+            ))}
+          </div>
+        )}
+        <div className="card__actions">
+          <button type="button" className="action" onClick={read}>
+            Read chapter
+          </button>
+          {single && (
+            <>
+              <button
+                type="button"
+                className="action action--verdigris"
+                onClick={() => actions.note(firstRef)}
+              >
+                Add note
+              </button>
+              <button
+                type="button"
+                className="action action--verdigris"
+                onClick={() => actions.crossRefs(firstRef)}
+              >
+                Cross-refs
+              </button>
+              <button
+                type="button"
+                className="action"
+                onClick={() => actions.original(firstRef)}
+              >
+                Original
+              </button>
+            </>
+          )}
+        </div>
+      </article>
+    </Section>
   )
 }
 
@@ -270,6 +356,13 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
     [topicId, readable],
   )
 
+  // A reference that names a verse takes the reader to it; a whole-chapter
+  // reference just opens the chapter.
+  const readTarget = (ref) =>
+    `read/${ref.book}/${ref.chapter}${
+      ref.verse_start > 0 ? `?v=${ref.verse_start}` : ''
+    }`
+
   return (
     <div className="view">
       <div className="section__head">
@@ -293,7 +386,7 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
                 {group.refs.map((ref, j) => (
                   <article key={`${ref.ref}-${j}`} className="card">
                     <div className="card__head">
-                      <CallNumber onClick={() => navigate(`read/${ref.book}/${ref.chapter}`)}>
+                      <CallNumber onClick={() => navigate(readTarget(ref))}>
                         {ref.ref}
                       </CallNumber>
                       <span className="tag">{ref.label}</span>
@@ -303,7 +396,7 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
                       <button
                         type="button"
                         className="action"
-                        onClick={() => navigate(`read/${ref.book}/${ref.chapter}`)}
+                        onClick={() => navigate(readTarget(ref))}
                       >
                         Read chapter
                       </button>
@@ -347,6 +440,7 @@ export function ReadView({ route, navigate, readable, chooseReading, meta, actio
     <Chapter
       book={book}
       chapter={Number(chapter)}
+      focus={Number(route.query.v) || 0}
       translation={readable}
       setTranslation={chooseReading}
       chips={chips}
@@ -419,6 +513,7 @@ function ChapterPicker({ meta, book, navigate }) {
 function Chapter({
   book,
   chapter,
+  focus,
   translation,
   setTranslation,
   chips,
@@ -434,6 +529,15 @@ function Chapter({
   useEffect(() => {
     window.scrollTo({ top: 0 })
   }, [book, chapter])
+
+  // A link that named a verse carries the reader down to it once the chapter
+  // arrives; the wash that marks it is the --focus class on the verse itself.
+  useEffect(() => {
+    if (!data || !focus) return
+    document
+      .getElementById(`verse-${focus}`)
+      ?.scrollIntoView({ block: 'center' })
+  }, [data, focus])
 
   return (
     <div className="view">
@@ -471,7 +575,15 @@ function Chapter({
                 text opens notes. The paragraph itself is no longer the
                 control, so neither one sits inside the other. */}
             {data.verses.map((verse) => (
-              <p key={verse.verse} className="reader__verse">
+              <p
+                key={verse.verse}
+                id={`verse-${verse.verse}`}
+                className={
+                  verse.verse === focus
+                    ? 'reader__verse reader__verse--focus'
+                    : 'reader__verse'
+                }
+              >
                 <button
                   type="button"
                   className="reader__num"
@@ -592,7 +704,9 @@ export function NotesView({ navigate, actions, notesVersion }) {
               <button
                 type="button"
                 className="action"
-                onClick={() => navigate(`read/${note.book}/${note.chapter}`)}
+                onClick={() =>
+                  navigate(`read/${note.book}/${note.chapter}?v=${note.verse}`)
+                }
               >
                 Read chapter
               </button>

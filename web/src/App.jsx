@@ -145,9 +145,9 @@ export default function App() {
           onClose={() => setNoteSheet(null)}
           onChanged={() => setNotesVersion((n) => n + 1)}
           onRead={(ref) => {
-            const [book, chapter] = ref.split('.')
+            const [book, chapter, verse] = ref.split('.')
             setNoteSheet(null)
-            navigate(`read/${book}/${chapter}`)
+            navigate(`read/${book}/${chapter}${verse ? `?v=${verse}` : ''}`)
           }}
         />
       )}
@@ -178,9 +178,9 @@ export default function App() {
               : undefined
           }
           backLabel={strongsSheet.from}
-          onRead={(book, chapter) => {
+          onRead={(book, chapter, verse) => {
             setStrongsSheet(null)
-            navigate(`read/${book}/${chapter}`)
+            navigate(`read/${book}/${chapter}${verse ? `?v=${verse}` : ''}`)
           }}
         />
       )}
@@ -190,9 +190,9 @@ export default function App() {
           verseRef={crossSheet.ref}
           translation={readable}
           onClose={() => setCrossSheet(null)}
-          onRead={(book, chapter) => {
+          onRead={(book, chapter, verse) => {
             setCrossSheet(null)
-            navigate(`read/${book}/${chapter}`)
+            navigate(`read/${book}/${chapter}${verse ? `?v=${verse}` : ''}`)
           }}
           onTopic={(id) => {
             setCrossSheet(null)

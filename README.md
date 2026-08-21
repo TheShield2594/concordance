@@ -41,7 +41,9 @@ Nothing brings them back if you lose the file itself.
 with the chips at the top. Matched words come back marked in the verse text. Results
 arrive best-match-first by default; the small link in the Verses header flips them
 into Genesis-to-Revelation order, which is what you want when you're tracing a word
-through the canon rather than hunting one line.
+through the canon rather than hunting one line. Type a reference instead of a word —
+"John 3:16", "1 Thess 4:16", "Psalm 23", or the app's own `PHP.4.6` — and the verse
+itself comes back as a card above the text hits, one tap from its chapter.
 
 **Topics** searches the same box against 4,667 Nave's topic names. Type "pray" and
 PRAYER comes back with its 711 references, grouped under the sub-headings Nave's
@@ -186,7 +188,7 @@ it at the head of verse 1, which is where it is read.
 | Endpoint | Returns |
 | --- | --- |
 | `GET /api/meta` | translations, books, chapter counts |
-| `GET /api/search?q=&translation=&sort=` | verses, matching topic names, and your notes |
+| `GET /api/search?q=&translation=&sort=` | verses, matching topic names, your notes — and the verse itself when `q` is a reference |
 | `GET /api/topics?q=` | topic names with reference counts |
 | `GET /api/topics/{id}` | one topic, grouped under Nave's sub-headings |
 | `GET /api/chapter/{book}/{chapter}` | a chapter, its neighbours, per-verse note counts |

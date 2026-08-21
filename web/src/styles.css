@@ -36,12 +36,16 @@
   /* Derived shades the flat palette doesn't carry. Sage at #7c9082 is a
      surface colour: as small text on white it misses 4.5:1, so anything
      type-sized wears --primary-strong instead. --moss is the secondary track
-     (topics, notes, cross-references), the counterpart of the primary sage. */
+     (topics, notes, cross-references), the counterpart of the primary sage --
+     and like sage it is a surface colour that misses AA as small text, so
+     moss-track type wears --moss-strong (5.98:1 on white) while spines, dots
+     and fills keep the lighter hue. */
   --primary-strong: #5c7061;
   /* --primary-foreground flips illegible on the darker hover sage, so hovered
      primary surfaces carry their own foreground. */
   --primary-strong-foreground: #ffffff;
   --moss: #a0aa88;
+  --moss-strong: #5a684a;
 
   /* The call-number stamp stays a dark badge with light type in both themes;
      in the dark theme it needs its own edge to part from the card. */
@@ -92,6 +96,7 @@
   --primary-strong: #a5b8ab;
   --primary-strong-foreground: #000000;
   --moss: #5a6b5e;
+  --moss-strong: #a8b48e;
 
   --stamp: #1a1a1a;
   --stamp-foreground: #f5f5f5;
@@ -384,8 +389,10 @@ select {
   text-decoration: underline;
 }
 
+/* Secondary-track actions hold the moss colour at the same weight the sage
+   track holds --primary-strong, instead of fading to grey. */
 .action--verdigris {
-  color: var(--muted-foreground);
+  color: var(--moss-strong);
 }
 
 .stack {
@@ -474,6 +481,22 @@ select {
   border-radius: 2px;
 }
 
+/* Arriving from a search hit, topic, note or cross-reference marks the verse:
+   a sage wash that holds for a beat, then fades once you've found your place. */
+.reader__verse--focus {
+  animation: verse-focus 2.4s ease-out 0.2s backwards;
+}
+
+@keyframes verse-focus {
+  0%,
+  30% {
+    background: color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 .reader__body:hover {
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
@@ -523,8 +546,10 @@ select {
   gap: 0.4rem;
 }
 
+/* The floor is set by the longest one-word name -- "Thessalonians" -- which
+   has to fit unbroken; auto-fill reflows a phone to three columns. */
 .grid--books {
-  grid-template-columns: repeat(auto-fill, minmax(5.6rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
 }
 
 .grid--chapters {
@@ -535,7 +560,7 @@ select {
   font-family: var(--font-mono);
   font-size: 0.7rem;
   letter-spacing: 0.05em;
-  padding: 0.5rem 0.35rem;
+  padding: 0.55rem 0.4rem;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -560,6 +585,10 @@ select {
   font-size: 0.72rem;
   color: var(--muted-foreground);
   letter-spacing: 0;
+  /* "1 Thessalonians" takes two lines on a phone rather than clipping; the
+     nowrap above is for the code line only. */
+  white-space: normal;
+  line-height: 1.3;
 }
 
 .tile:hover .tile__name,

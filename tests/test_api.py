@@ -126,6 +126,43 @@ class ApiTests(unittest.TestCase):
     def test_unknown_translation_is_rejected(self):
         self.assertEqual(self.client.get("/api/search?q=a&translation=NIV").status_code, 400)
 
+    def test_a_typed_reference_returns_the_verse(self):
+        body = self.client.get(
+            "/api/search", params={"q": "John 3:16", "translation": "KJV"}
+        ).json()
+        ref = body["reference"]
+        self.assertEqual(ref["ref"], "JHN.3.16")
+        self.assertEqual(ref["label"], "John 3:16")
+        self.assertEqual(len(ref["verses"]), 1)
+        self.assertIn("only begotten Son", ref["verses"][0]["text"])
+
+    def test_the_call_number_format_searches_too(self):
+        # Across ALL translations the card carries one row apiece.
+        body = self.client.get("/api/search", params={"q": "PHP.4.6"}).json()
+        ref = body["reference"]
+        self.assertEqual(ref["ref"], "PHP.4.6")
+        self.assertEqual(
+            {v["translation"] for v in ref["verses"]}, {"KJV", "ASV", "WEB", "BSB"}
+        )
+
+    def test_a_chapter_reference_is_a_doorway(self):
+        body = self.client.get("/api/search", params={"q": "numbers 17"}).json()
+        ref = body["reference"]
+        self.assertEqual(ref["ref"], "NUM.17")
+        self.assertEqual(ref["label"], "Numbers 17")
+        self.assertEqual(ref["verses"], [])  # the reader shows the text
+        # And the word "numbers" alone stays an ordinary text search.
+        plain = self.client.get("/api/search", params={"q": "numbers"}).json()
+        self.assertIsNone(plain["reference"])
+        self.assertGreater(plain["verse_total"], 0)
+
+    def test_a_reference_past_the_text_has_no_card(self):
+        for q in ("PHP.99.1", "Philippians 99:1"):
+            body = self.client.get("/api/search", params={"q": q}).json()
+            self.assertIsNone(body["reference"], q)
+        # and an ordinary word query carries none at all
+        self.assertIsNone(self.client.get("/api/search?q=grace").json()["reference"])
+
     # -------------------------------------------------------------- topics
 
     def test_topic_detail_groups_by_heading(self):
@@ -162,6 +199,8 @@ class ApiTests(unittest.TestCase):
                 # form PHP.4, which is not a cross-reference but a self-reference
                 parsed = refs.parse(ref["ref"])
                 self.assertIsNotNone(parsed, ref["ref"])
+                # the UI carries the verse into the reader
+                self.assertEqual(ref["verse_start"], parsed.verse_start)
                 covers = (
                     parsed.book == "PHP"
                     and parsed.chapter == 4
