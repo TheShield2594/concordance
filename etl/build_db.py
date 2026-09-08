@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import books as bk  # noqa: E402
+import embeddings as emb  # noqa: E402
 import originals as og  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -307,23 +308,29 @@ def load_originals(con: sqlite3.Connection) -> None:
 NOTE_COLUMNS = (
     "id, verse_ref, book, chapter, verse, translation, body, created_at, updated_at"
 )
+HIGHLIGHT_COLUMNS = "id, verse_ref, book, chapter, verse, created_at"
+THREAD_COLUMNS = "id, name, created_at, updated_at"
+THREAD_ITEM_COLUMNS = (
+    "id, thread_id, verse_ref, book, chapter, verse_start, verse_end, note, seq,"
+    " created_at"
+)
 
 
-def rescue_notes(db_path: Path) -> list[tuple]:
-    """Read personal notes out of the database that is about to be replaced.
+def rescue_table(db_path: Path, table: str, columns: str) -> list[tuple]:
+    """Read personal data out of the database that is about to be replaced.
 
-    Scripture can always be rebuilt from the sources; notes cannot. Opening the
-    database properly (rather than copying the file) also picks up anything
-    still sitting in the WAL.
+    Scripture can always be rebuilt from the sources; notes, highlights and
+    study threads cannot. Opening the database properly (rather than copying
+    the file) also picks up anything still sitting in the WAL.
     """
     if not db_path.exists():
         return []
     con = sqlite3.connect(db_path)
     try:
-        con.execute("SELECT 1 FROM notes LIMIT 1")
-        return con.execute(f"SELECT {NOTE_COLUMNS} FROM notes ORDER BY id").fetchall()
+        con.execute(f"SELECT 1 FROM {table} LIMIT 1")
+        return con.execute(f"SELECT {columns} FROM {table} ORDER BY id").fetchall()
     except sqlite3.DatabaseError:
-        return []  # older or corrupt file with no notes table
+        return []  # older or corrupt file with no such table yet
     finally:
         con.close()
 
@@ -351,9 +358,20 @@ def discard(path: Path) -> None:
 
 def build(db_path: Path) -> None:
     require_fts5()
-    saved_notes = rescue_notes(db_path)
-    if saved_notes:
-        print(f"holding on to {len(saved_notes):,} note(s) across the rebuild")
+    saved_notes = rescue_table(db_path, "notes", NOTE_COLUMNS)
+    saved_highlights = rescue_table(db_path, "highlights", HIGHLIGHT_COLUMNS)
+    saved_threads = rescue_table(db_path, "study_threads", THREAD_COLUMNS)
+    saved_thread_items = rescue_table(db_path, "thread_items", THREAD_ITEM_COLUMNS)
+    kept = sum(
+        bool(x)
+        for x in (saved_notes, saved_highlights, saved_threads, saved_thread_items)
+    )
+    if kept:
+        print(
+            f"holding on to {len(saved_notes):,} note(s), "
+            f"{len(saved_highlights):,} highlight(s), {len(saved_threads):,} "
+            f"thread(s) across the rebuild"
+        )
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -365,7 +383,13 @@ def build(db_path: Path) -> None:
 
     con = sqlite3.connect(tmp_path)
     try:
-        populate(con, saved_notes)
+        populate(
+            con,
+            saved_notes,
+            saved_highlights=saved_highlights,
+            saved_threads=saved_threads,
+            saved_thread_items=saved_thread_items,
+        )
     except BaseException:
         con.close()
         discard(tmp_path)
@@ -387,7 +411,14 @@ def discard_sidecars(path: Path) -> None:
             stale.unlink()
 
 
-def populate(con: sqlite3.Connection, saved_notes: list[tuple]) -> None:
+def populate(
+    con: sqlite3.Connection,
+    saved_notes: list[tuple],
+    *,
+    saved_highlights: list[tuple] = (),
+    saved_threads: list[tuple] = (),
+    saved_thread_items: list[tuple] = (),
+) -> None:
     con.executescript(SCHEMA.read_text())
 
     con.executemany(
@@ -468,17 +499,26 @@ def populate(con: sqlite3.Connection, saved_notes: list[tuple]) -> None:
     print("original languages:")
     load_originals(con)
 
-    if saved_notes:
-        placeholders = ",".join("?" * len(saved_notes[0]))
-        con.executemany(
-            f"INSERT INTO notes({NOTE_COLUMNS}) VALUES ({placeholders})", saved_notes
-        )
-        kept = con.execute("SELECT count(*) FROM notes").fetchone()[0]
-        print(f"  restored {kept:,} note(s)")
+    print("meaning search:")
+    emb.build(con)
+
+    _restore(con, "notes", NOTE_COLUMNS, saved_notes)
+    _restore(con, "highlights", HIGHLIGHT_COLUMNS, saved_highlights)
+    _restore(con, "study_threads", THREAD_COLUMNS, saved_threads)
+    _restore(con, "thread_items", THREAD_ITEM_COLUMNS, saved_thread_items)
 
     con.commit()
     con.execute("PRAGMA optimize")
     con.execute("VACUUM")
+
+
+def _restore(con: sqlite3.Connection, table: str, columns: str, rows: list[tuple]) -> None:
+    if not rows:
+        return
+    placeholders = ",".join("?" * len(rows[0]))
+    con.executemany(f"INSERT INTO {table}({columns}) VALUES ({placeholders})", rows)
+    kept = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+    print(f"  restored {kept:,} row(s) in {table}")
 
 
 def _flush_topic_verses(con: sqlite3.Connection, batch: list) -> None:

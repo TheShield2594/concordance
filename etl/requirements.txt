@@ -1,0 +1,5 @@
+# Build-time only -- never installed where the app runs. Used once by
+# etl/embeddings.py to fit the TF-IDF/SVD model behind meaning search; the
+# server re-implements the query-time transform with plain numpy.
+scikit-learn>=1.4
+numpy>=1.26

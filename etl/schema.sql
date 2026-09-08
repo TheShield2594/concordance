@@ -159,3 +159,80 @@ CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
     INSERT INTO notes_fts(notes_fts, rowid, body) VALUES ('delete', old.id, old.body);
     INSERT INTO notes_fts(rowid, body) VALUES (new.id, new.body);
 END;
+
+-- Marking a verse with no note attached. One per verse: highlighting twice is
+-- a no-op, not a second row.
+CREATE TABLE IF NOT EXISTS highlights (
+    id          INTEGER PRIMARY KEY,
+    verse_ref   TEXT NOT NULL UNIQUE,
+    book        TEXT NOT NULL REFERENCES books(code),
+    chapter     INTEGER NOT NULL,
+    verse       INTEGER NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS highlights_loc ON highlights(book, chapter, verse);
+
+-- Study threads: a named collection of verses (each with an optional short
+-- annotation) a user builds while reading. The one new primitive -- notes
+-- stay flat and verse-scoped, threads are what tie several of them together.
+CREATE TABLE IF NOT EXISTS study_threads (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS thread_items (
+    id          INTEGER PRIMARY KEY,
+    thread_id   INTEGER NOT NULL REFERENCES study_threads(id) ON DELETE CASCADE,
+    verse_ref   TEXT NOT NULL,
+    book        TEXT NOT NULL REFERENCES books(code),
+    chapter     INTEGER NOT NULL,
+    verse_start INTEGER NOT NULL,
+    verse_end   INTEGER NOT NULL,
+    note        TEXT,                  -- short annotation, optional
+    seq         INTEGER NOT NULL,      -- order added
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS thread_items_thread ON thread_items(thread_id, seq);
+CREATE UNIQUE INDEX IF NOT EXISTS thread_items_unique ON thread_items(thread_id, verse_ref);
+-- A verse's thread membership is looked up from the reader, so it needs the
+-- reverse index too.
+CREATE INDEX IF NOT EXISTS thread_items_ref ON thread_items(verse_ref);
+
+CREATE TRIGGER IF NOT EXISTS thread_items_ai AFTER INSERT ON thread_items BEGIN
+    UPDATE study_threads SET updated_at = datetime('now') WHERE id = new.thread_id;
+END;
+CREATE TRIGGER IF NOT EXISTS thread_items_au AFTER UPDATE ON thread_items BEGIN
+    UPDATE study_threads SET updated_at = datetime('now') WHERE id = new.thread_id;
+END;
+CREATE TRIGGER IF NOT EXISTS thread_items_ad AFTER DELETE ON thread_items BEGIN
+    UPDATE study_threads SET updated_at = datetime('now') WHERE id = old.thread_id;
+END;
+
+-- Meaning search. Verses never change after the ETL, so like `verses` this is
+-- written once and read-only at runtime -- no triggers.
+--
+-- The embedding is on-device LSA (TF-IDF, reduced with truncated SVD), not a
+-- neural model: real semantic recall -- "light of the world" reaching Isaiah
+-- 49:6 without sharing a word with it -- with nothing heavier than numpy at
+-- request time and nothing at all fetched over the network. `search_model`
+-- holds the one thing needed to embed a query the same way the verses were
+-- embedded: the vocabulary, its idf weights, and the SVD projection.
+CREATE TABLE IF NOT EXISTS verse_embeddings (
+    book     TEXT NOT NULL REFERENCES books(code),
+    chapter  INTEGER NOT NULL,
+    verse    INTEGER NOT NULL,
+    vector   BLOB NOT NULL,            -- float32[dims], little-endian
+    PRIMARY KEY (book, chapter, verse)
+);
+
+CREATE TABLE IF NOT EXISTS search_model (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    dims       INTEGER NOT NULL,
+    vocabulary TEXT NOT NULL,          -- JSON: {term: column index}
+    idf        BLOB NOT NULL,          -- float32[vocab_size]
+    components BLOB NOT NULL           -- float32[dims * vocab_size], row-major
+);

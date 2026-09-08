@@ -413,6 +413,144 @@ class ApiTests(unittest.TestCase):
             con.close()
         self.assertEqual(rows, [("kept",)])
 
+    # ---------------------------------------------------------- highlights
+
+    def test_highlight_lifecycle_is_idempotent(self):
+        created = self.client.post("/api/highlights", json={"verse_ref": "JHN.1.1"})
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["label"], "John 1:1")
+
+        # Highlighting twice is a no-op, not a second row.
+        again = self.client.post("/api/highlights", json={"verse_ref": "JHN.1.1"})
+        self.assertEqual(again.status_code, 201)
+        self.assertEqual(
+            len(self.client.get("/api/highlights?ref=JHN.1.1").json()["highlights"]), 1
+        )
+
+        ch = self.client.get("/api/chapter/JHN/1").json()
+        self.assertTrue(
+            [v["highlighted"] for v in ch["verses"] if v["verse"] == 1][0]
+        )
+        self.assertFalse(
+            [v["highlighted"] for v in ch["verses"] if v["verse"] == 2][0]
+        )
+
+        self.assertEqual(self.client.delete("/api/highlights/JHN.1.1").status_code, 204)
+        self.assertEqual(
+            self.client.get("/api/highlights?ref=JHN.1.1").json()["highlights"], []
+        )
+
+    def test_highlight_on_a_nonexistent_verse_is_refused(self):
+        r = self.client.post("/api/highlights", json={"verse_ref": "PHP.99.1"})
+        self.assertEqual(r.status_code, 404)
+
+    # -------------------------------------------------------- study threads
+
+    def test_thread_lifecycle(self):
+        created = self.client.post("/api/threads", json={"name": "Light & darkness"})
+        self.assertEqual(created.status_code, 201)
+        thread = created.json()
+        self.assertEqual(thread["item_count"], 0)
+
+        item = self.client.post(
+            f"/api/threads/{thread['id']}/items",
+            json={"verse_ref": "JHN.1.5", "note": "darkness cannot overtake it"},
+        )
+        self.assertEqual(item.status_code, 201)
+        item2 = self.client.post(
+            f"/api/threads/{thread['id']}/items", json={"verse_ref": "JHN.8.12"}
+        )
+        self.assertEqual(item2.status_code, 201)
+
+        detail = self.client.get(f"/api/threads/{thread['id']}").json()
+        self.assertEqual(detail["item_count"], 2)
+        self.assertEqual(detail["note_count"], 1)
+        self.assertEqual([i["ref"] for i in detail["items"]], ["JHN.1.5", "JHN.8.12"])
+        self.assertIn("darkness", detail["items"][0]["text"])
+
+        # A duplicate verse is refused rather than filed twice.
+        dup = self.client.post(
+            f"/api/threads/{thread['id']}/items", json={"verse_ref": "JHN.1.5"}
+        )
+        self.assertEqual(dup.status_code, 409)
+
+        # Listing with `ref` flags which threads already carry that verse.
+        listed = self.client.get("/api/threads?ref=JHN.1.5").json()["threads"]
+        self.assertEqual([t["contains"] for t in listed if t["id"] == thread["id"]], [True])
+
+        renamed = self.client.patch(
+            f"/api/threads/{thread['id']}", json={"name": "Light and darkness in John"}
+        )
+        self.assertEqual(renamed.json()["name"], "Light and darkness in John")
+
+        self.client.delete(f"/api/threads/items/{item.json()['id']}")
+        self.assertEqual(
+            self.client.get(f"/api/threads/{thread['id']}").json()["item_count"], 1
+        )
+
+        self.assertEqual(
+            self.client.delete(f"/api/threads/{thread['id']}").status_code, 204
+        )
+        self.assertEqual(
+            self.client.get(f"/api/threads/{thread['id']}").status_code, 404
+        )
+
+    def test_thread_item_on_a_nonexistent_verse_is_refused(self):
+        thread = self.client.post("/api/threads", json={"name": "x"}).json()
+        r = self.client.post(
+            f"/api/threads/{thread['id']}/items", json={"verse_ref": "PHP.99.1"}
+        )
+        self.assertEqual(r.status_code, 404)
+
+    def test_thread_with_empty_name_is_refused(self):
+        r = self.client.post("/api/threads", json={"name": "   "})
+        self.assertEqual(r.status_code, 400)
+
+    # -------------------------------------------------------------- today
+
+    def test_today_is_deterministic_and_offline(self):
+        first = self.client.get("/api/today").json()
+        second = self.client.get("/api/today").json()
+        self.assertEqual(first["verse_of_day"]["ref"], second["verse_of_day"]["ref"])
+        self.assertIsNotNone(first["verse_of_day"]["verse"])
+
+        self.client.post("/api/threads", json={"name": "Most recently touched"})
+        again = self.client.get("/api/today").json()
+        self.assertEqual(again["recent_thread"]["name"], "Most recently touched")
+
+    # ------------------------------------------------------- meaning search
+
+    def test_meaning_mode_adds_related_verses_beyond_exact_words(self):
+        body = self.client.get(
+            "/api/search?q=faith+without+works+is+dead&translation=KJV&mode=meaning"
+        ).json()
+        kinds = {v["ref"]: v["match_kind"] for v in body["verses"]}
+        self.assertEqual(kinds.get("JAS.2.26"), "exact")
+        # James 2:17 says the same thing without repeating "without" or "dead
+        # also" -- FTS alone (an AND over every term) would never surface it.
+        self.assertEqual(kinds.get("JAS.2.17"), "meaning")
+
+    def test_exact_mode_has_no_meaning_only_results(self):
+        body = self.client.get(
+            "/api/search?q=faith+without+works+is+dead&translation=KJV&mode=exact"
+        ).json()
+        self.assertTrue(all(v["match_kind"] == "exact" for v in body["verses"]))
+        self.assertNotIn("JAS.2.17", [v["ref"] for v in body["verses"]])
+
+    def test_strongs_mode_finds_by_transliteration_without_accents(self):
+        body = self.client.get("/api/search?q=logos&mode=strongs").json()
+        ids = [m["id"] for m in body["strongs_matches"]]
+        self.assertIn("G3056", ids)
+        # An exact transliteration match sorts first.
+        self.assertEqual(ids[0], "G3056")
+        # A number search is unaffected by the mode.
+        self.assertEqual(body["verses"], [])
+
+    def test_strongs_histogram_spans_the_canon(self):
+        entry = self.client.get("/api/strongs/G3056").json()
+        self.assertEqual(sum(entry["histogram"]), entry["occurrences"])
+        self.assertEqual(len(entry["histogram"]), 24)
+
 
 if __name__ == "__main__":
     unittest.main()
