@@ -2,27 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api } from './api.js'
 import { ErrorNote, Spinner } from './components.jsx'
-import { useAsync, useRoute, useStoredState } from './hooks.js'
+import Desktop from './desktop.jsx'
+import { IconNote, IconRead, IconSearch, IconToday } from './icons.jsx'
+import { useAsync, useMediaQuery, useRoute, useStoredState } from './hooks.js'
 import { CrossRefSheet, InterlinearSheet, NoteSheet, StrongsSheet } from './sheets.jsx'
-import { NotesView, ReadView, SearchView, TopicsView } from './views.jsx'
+import { NotesView, ReadView, SearchView, TodayView, TopicsView } from './views.jsx'
 
-// Typographic marks, not emoji -- the chrome stays monochrome parchment.
 const TABS = [
-  { id: 'search', label: 'Search', glyph: '⌕' },
-  { id: 'topics', label: 'Topics', glyph: '☰' },
-  { id: 'read', label: 'Read', glyph: '▤' },
-  { id: 'notes', label: 'Notes', glyph: '✎' },
+  { id: 'today', label: 'Today', Icon: IconToday },
+  { id: 'read', label: 'Read', Icon: IconRead },
+  { id: 'search', label: 'Search', Icon: IconSearch },
+  { id: 'notes', label: 'Notes', Icon: IconNote },
 ]
-
-const SUBTITLE = {
-  search: 'Full text · four translations',
-  topics: "Nave's topical index",
-  read: 'Chapter in context',
-  notes: 'Your marginalia',
-}
 
 export default function App() {
   const [route, navigate] = useRoute()
+  const isDesktop = useMediaQuery('(min-width: 68rem)')
   const [translation, setTranslation] = useStoredState('concordance.translation', 'ALL')
   // The reader has to name one translation. Keeping that choice separate means
   // a search filtered across ALL stays ALL when you go read something.
@@ -37,11 +32,18 @@ export default function App() {
   // from a search. It remembers which verse it came from, if any, so the way
   // back is a link rather than a second modal stacked on the first.
   const [strongsSheet, setStrongsSheet] = useState(null)
-  // Bumped whenever notes change, so open views refetch.
+  // Bumped whenever notes, highlights or threads change, so open views refetch.
   const [notesVersion, setNotesVersion] = useState(0)
+  const [highlightsVersion, setHighlightsVersion] = useState(0)
+  const [threadsVersion, setThreadsVersion] = useState(0)
 
-  // A note opened without a translation takes the one currently on screen,
-  // not a hardcoded KJV; the ALL case is resolved to `readable` below.
+  const bumpNotes = useCallback(() => setNotesVersion((n) => n + 1), [])
+  const bumpHighlights = useCallback(() => setHighlightsVersion((n) => n + 1), [])
+  const bumpThreads = useCallback(() => setThreadsVersion((n) => n + 1), [])
+
+  // A note (or a highlight, or a thread add) opened without a translation
+  // takes the one currently on screen, not a hardcoded KJV; the ALL case is
+  // resolved to `readable` below.
   const actions = {
     note: useCallback(
       (ref, forTranslation) =>
@@ -51,6 +53,14 @@ export default function App() {
     crossRefs: useCallback((ref) => setCrossSheet({ ref }), []),
     original: useCallback((ref) => setOriginalSheet({ ref }), []),
     strongs: useCallback((number) => setStrongsSheet({ number }), []),
+    toggleHighlight: useCallback(
+      async (ref, isHighlighted) => {
+        if (isHighlighted) await api.removeHighlight(ref)
+        else await api.addHighlight(ref)
+        bumpHighlights()
+      },
+      [bumpHighlights],
+    ),
   }
 
   // Coming back to the Search tab should land on the search you left, not an
@@ -94,56 +104,22 @@ export default function App() {
     readable,
     chooseReading,
     meta: meta.data,
+    chips,
     actions,
     notesVersion,
+    highlightsVersion,
+    threadsVersion,
   }
 
-  return (
-    <div className="app">
-      <header className="masthead">
-        <div className="masthead__row">
-          <h1>Concordance</h1>
-          <span className="masthead__sub">{SUBTITLE[route.tab] ?? ''}</span>
-        </div>
-      </header>
-
-      {meta.loading && <Spinner label="Opening the stacks" />}
-      <ErrorNote error={meta.error} />
-
-      {meta.data && route.tab === 'search' && <SearchView {...shared} chips={chips} />}
-      {meta.data && route.tab === 'topics' && <TopicsView {...shared} />}
-      {meta.data && route.tab === 'read' && <ReadView {...shared} />}
-      {meta.data && route.tab === 'notes' && <NotesView {...shared} />}
-
-      <nav className="tabs" aria-label="Sections">
-        <div className="tabs__inner">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className="tab"
-              aria-current={route.tab === tab.id ? 'page' : undefined}
-              onClick={() =>
-                navigate(tab.id === 'search' ? lastSearch.current : tab.id)
-              }
-            >
-              <span className="tab__glyph" aria-hidden="true">
-                {tab.glyph}
-              </span>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </nav>
-
+  const sheets = (
+    <>
       {noteSheet && (
         <NoteSheet
           verseRef={noteSheet.ref}
-          translation={
-            noteSheet.translation === 'ALL' ? readable : noteSheet.translation
-          }
+          translation={noteSheet.translation === 'ALL' ? readable : noteSheet.translation}
           onClose={() => setNoteSheet(null)}
-          onChanged={() => setNotesVersion((n) => n + 1)}
+          onChanged={bumpNotes}
+          onThreadsChanged={bumpThreads}
           onRead={(ref) => {
             const [book, chapter, verse] = ref.split('.')
             setNoteSheet(null)
@@ -200,6 +176,59 @@ export default function App() {
           }}
         />
       )}
+    </>
+  )
+
+  if (meta.loading || meta.error) {
+    return (
+      <div className="app">
+        <div className="view">
+          {meta.loading && <Spinner label="Opening the stacks" />}
+          <ErrorNote error={meta.error} />
+        </div>
+      </div>
+    )
+  }
+
+  if (isDesktop) {
+    return (
+      <div className="app">
+        <Desktop {...shared} />
+        {sheets}
+      </div>
+    )
+  }
+
+  return (
+    <div className="app">
+      <div className="shell">
+        {route.tab === 'today' && <TodayView {...shared} />}
+        {route.tab === 'search' && <SearchView {...shared} />}
+        {route.tab === 'topics' && <TopicsView {...shared} />}
+        {route.tab === 'read' && <ReadView {...shared} />}
+        {route.tab === 'notes' && <NotesView {...shared} />}
+      </div>
+
+      <nav className="tabs" aria-label="Sections">
+        <div className="tabs__inner">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className="tab"
+              aria-current={route.tab === tab.id ? 'page' : undefined}
+              onClick={() => navigate(tab.id === 'search' ? lastSearch.current : tab.id)}
+            >
+              <span className="tab__glyph">
+                <tab.Icon size={23} />
+              </span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {sheets}
     </div>
   )
 }

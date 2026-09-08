@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from './api.js'
-import { CallNumber, ErrorNote, Sheet, Spinner } from './components.jsx'
+import { Badge, ErrorNote, Panel, Sheet, Spinner } from './components.jsx'
 import { formatDateTime } from './format.js'
 import { useAsync } from './hooks.js'
 
-/** Attach or edit notes on a verse. */
-export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead }) {
+/** Attach or edit notes on a verse, and file it into a study thread. */
+/** Note editor + thread picker for one verse -- the body shared by the
+ * mobile Note sheet and the desktop rail's Notes tab. */
+export function NotesPanel({ verseRef, translation, onChanged, onThreadsChanged, onRead }) {
   const verse = useAsync(() => api.verse(verseRef, translation), [verseRef, translation])
   const notes = useAsync(() => api.notes({ ref: verseRef }), [verseRef])
   const [draft, setDraft] = useState('')
@@ -34,8 +36,6 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
         setDraft('')
       }
       refresh()
-      // Saving empties the draft, which disables the button focus was sitting
-      // on. Put the cursor back in the editor instead of dropping it on <body>.
       editor.current?.focus()
     } catch (e) {
       setError(e)
@@ -63,11 +63,7 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
   const existing = notes.data?.notes ?? []
 
   return (
-    <Sheet
-      title={verse.data?.label ?? 'Note'}
-      subtitle={`${verseRef} · ${translation}`}
-      onClose={onClose}
-    >
+    <>
       {text && <p className="quote">{text}</p>}
       <ErrorNote error={verse.error} />
       <ErrorNote error={notes.error} />
@@ -76,9 +72,7 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
         ref={editor}
         value={editing ? editing.body : draft}
         onChange={(e) =>
-          editing
-            ? setEditing({ ...editing, body: e.target.value })
-            : setDraft(e.target.value)
+          editing ? setEditing({ ...editing, body: e.target.value }) : setDraft(e.target.value)
         }
         placeholder={editing ? 'Edit note…' : 'Write a note on this verse…'}
         aria-label="Note text"
@@ -105,30 +99,30 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
         </button>
       </div>
 
+      <AddToThread verseRef={verseRef} onChanged={onThreadsChanged} />
+
       {notes.loading && <Spinner label="Reading notes" />}
 
       {!notes.loading && existing.length > 0 && (
-        <div className="stack">
+        <div className="results">
           {existing.map((note) => (
-            <article key={note.id} className="card card--verdigris">
-              <div className="card__head">
-                <CallNumber>{note.verse_ref}</CallNumber>
-                <span className="tag" style={{ marginLeft: 'auto' }}>
-                  {formatDateTime(note.updated_at)}
-                </span>
+            <article key={note.id} className="result">
+              <div className="result__head">
+                <span className="result__ref">{note.verse_ref}</span>
+                <span className="result__kind">{formatDateTime(note.updated_at)}</span>
               </div>
               <p className="note-body">{note.body}</p>
-              <div className="card__actions">
+              <div className="result__actions">
                 <button
                   type="button"
-                  className="action"
+                  className="result__action"
                   onClick={() => setEditing({ id: note.id, body: note.body })}
                 >
                   Edit
                 </button>
                 <button
                   type="button"
-                  className="action"
+                  className="result__action result__action--quiet"
                   onClick={() => remove(note.id)}
                   disabled={busy}
                 >
@@ -139,88 +133,243 @@ export function NoteSheet({ verseRef, translation, onClose, onChanged, onRead })
           ))}
         </div>
       )}
+    </>
+  )
+}
+
+export function NoteSheet({ verseRef, translation, onClose, onChanged, onThreadsChanged, onRead }) {
+  const heading = useAsync(() => api.verse(verseRef, translation), [verseRef, translation])
+  return (
+    <Sheet eyebrow={`${verseRef} · ${translation}`} title={heading.data?.label ?? 'Note'} onClose={onClose}>
+      <NotesPanel
+        verseRef={verseRef}
+        translation={translation}
+        onChanged={onChanged}
+        onThreadsChanged={onThreadsChanged}
+        onRead={onRead}
+      />
     </Sheet>
   )
 }
 
+/** The study-thread picker: existing threads a verse can join, plus "New…". */
+export function AddToThread({ verseRef, onChanged }) {
+  const { data, reload } = useAsync(() => api.threads(verseRef), [verseRef])
+  const [busy, setBusy] = useState(false)
+  const threads = data?.threads ?? []
+
+  const addTo = async (id) => {
+    setBusy(true)
+    try {
+      await api.addThreadItem(id, { verseRef })
+      reload()
+      onChanged?.()
+    } catch {
+      /* likely already a member -- the chip already shows that state */
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createAndAdd = async () => {
+    const name = window.prompt('Name this thread')
+    if (!name?.trim()) return
+    setBusy(true)
+    try {
+      const thread = await api.createThread(name.trim())
+      await api.addThreadItem(thread.id, { verseRef })
+      reload()
+      onChanged?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="stack stack--tight">
+      <span className="quote__label muted">Add to thread</span>
+      <div className="thread-add">
+        {threads.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className="thread-add__existing"
+            aria-pressed={t.contains}
+            disabled={busy || t.contains}
+            onClick={() => addTo(t.id)}
+          >
+            <span className="dot" />
+            {t.name}
+          </button>
+        ))}
+        <button type="button" className="chip chip--dashed" onClick={createAndAdd} disabled={busy}>
+          New…
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /**
- * The verse word by word in Hebrew, Aramaic or Greek.
+ * The verse's original language, one word at a time. The words are not
+ * aligned to the English -- no public dataset lines up these translations
+ * word for word -- so tapping through the strip studies one word against
+ * the whole verse rather than pretending to point at an English match.
  *
- * The words are not aligned to the English -- no public dataset lines up these
- * translations word for word -- so this sets the whole verse beside its
- * original rather than pretending to point at one word from the other side.
+ * Used two ways: as the body of the mobile Original sheet (dark chrome) and,
+ * unwrapped, as the desktop rail's Original tab (light chrome) -- the CSS
+ * under `.original` reads its colours from `--orig-*` variables that the
+ * rail redefines, so the same markup serves both without a second copy.
  */
-export function InterlinearSheet({ verseRef, translation, onClose, onStrongs }) {
+export function OriginalPanel({ verseRef, translation, onStrongs }) {
   const { data, error, loading } = useAsync(
     () => api.interlinear(verseRef, translation),
     [verseRef, translation],
   )
   const words = data?.words ?? []
+  const [index, setIndex] = useState(0)
+
+  useEffect(() => {
+    // Land on the first word actually in the dictionary, not a prefix.
+    const first = words.findIndex((w) => w.in_dictionary)
+    setIndex(first === -1 ? 0 : first)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+
+  const word = words[index]
+  const entry = useAsync(
+    () => (word?.in_dictionary ? api.strongs(word.strongs_base) : Promise.resolve(null)),
+    [word?.strongs_base],
+    { skip: !word?.in_dictionary },
+  )
 
   return (
-    <Sheet
-      title={data?.label ?? 'Original'}
-      subtitle={`${verseRef}${data?.language ? ` · ${data.language}` : ''}`}
-      onClose={onClose}
-    >
+    <>
       {loading && <Spinner label="Opening" />}
       <ErrorNote error={error} />
 
-      {data?.verse && <p className="quote">{data.verse.text}</p>}
+      {data && (
+        <p className="sheet__eyebrow" style={{ margin: '-0.4rem 0 0' }}>
+          {data.language} · {data.label}
+        </p>
+      )}
 
       {data && words.length === 0 && (
-        <p className="muted">
-          No tagged original for this verse. The Hebrew and Greek follow the
-          versification of English Bibles, and a few verses divide differently.
+        <p className="original__variant-note">
+          No tagged original for this verse. The Hebrew and Greek follow the versification of
+          English Bibles, and a few verses divide differently.
         </p>
       )}
 
       {words.length > 0 && (
-        <div className="interlinear" dir={data.direction}>
-          {words.map((word) => (
-            <button
-              key={`${word.verse}-${word.seq}`}
-              type="button"
-              // The grid runs right to left for Hebrew, but the slip's own
-              // contents are English and read the other way. Without this the
-              // bidi algorithm drags their punctuation across: "and <obj.>"
-              // comes out "<.and <obj".
-              dir="ltr"
-              className={`slip${word.variant ? ' slip--variant' : ''}`}
-              onClick={() => word.in_dictionary && onStrongs(word.strongs_base)}
-              disabled={!word.in_dictionary}
-              title={
-                word.in_dictionary
-                  ? `Strong's ${word.strongs_base}`
-                  : 'A prefix or suffix; Strong’s never numbered these'
-              }
-            >
-              <span
-                className={`slip__word slip__word--${word.lang}`}
-                dir={data.direction}
+        <div className="original">
+          <div className="original__strip" dir={data.direction}>
+            {words.map((w, i) => (
+              <button
+                key={`${w.verse}-${w.seq}`}
+                type="button"
+                dir="ltr"
+                className="original__word"
+                aria-current={i === index}
+                onClick={() => setIndex(i)}
               >
-                {word.surface}
-              </span>
-              <span className="slip__translit">{word.translit}</span>
-              <span className="slip__gloss">{word.gloss}</span>
-              <span className="slip__foot">
-                {word.in_dictionary && (
-                  <span className="callno callno--sm">{word.strongs_base}</span>
+                <span className={`original__word-surface original__word-surface--${w.lang}`} dir={data.direction}>
+                  {w.surface}
+                </span>
+                <span className="original__word-translit">{w.translit}</span>
+                <span className="original__word-gloss">{w.gloss}</span>
+              </button>
+            ))}
+          </div>
+
+          {word && !word.in_dictionary && (
+            <p className="original__variant-note">
+              A prefix or suffix; Strong's never numbered these.
+            </p>
+          )}
+
+          {entry.loading && <Spinner label="Looking up" />}
+
+          {word?.in_dictionary && entry.data && (
+            <div className="original__detail">
+              <div className="original__detail-head">
+                <span className={`original__lemma original__lemma--${entry.data.lang}`} dir={entry.data.direction}>
+                  {entry.data.lemma}
+                </span>
+                <Badge tone="onprimary" onClick={() => onStrongs(entry.data.id)}>
+                  {entry.data.id}
+                </Badge>
+              </div>
+              <p className="original__gloss">{entry.data.definition}</p>
+              <div className="original__facts">
+                <div className="original__fact">
+                  <span className="original__fact-label">Form</span>
+                  <span className="original__fact-value">{word.parsing || word.morph}</span>
+                </div>
+                {entry.data.derivation && (
+                  <div className="original__fact">
+                    <span className="original__fact-label">Root</span>
+                    <span className="original__fact-value">{entry.data.derivation}</span>
+                  </div>
                 )}
-                <span className="slip__parsing">{word.parsing || word.morph}</span>
-              </span>
-            </button>
-          ))}
+              </div>
+
+              <div className="stack stack--tight">
+                <div className="section__head" style={{ border: 0, margin: 0 }}>
+                  <span className="panel__eyebrow">
+                    {entry.data.occurrences.toLocaleString()} occurrences
+                  </span>
+                  <button type="button" className="link" onClick={() => onStrongs(entry.data.id)}>
+                    See all
+                  </button>
+                </div>
+                <Histogram counts={entry.data.histogram} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {words.some((w) => w.variant) && (
-        <p className="muted muted--foot">
-          Dimmed words are carried by the Received Text — the King James's
-          source — but not by the critical editions the other three follow.
+        <p className="original__variant-note">
+          Dimmed words are carried by the Received Text — the King James's source — but not by
+          the critical editions the other three follow.
         </p>
       )}
+    </>
+  )
+}
+
+export function InterlinearSheet({ verseRef, translation, onClose, onStrongs }) {
+  return (
+    <Sheet dark title="Original" onClose={onClose}>
+      <div className="original">
+        <OriginalPanel verseRef={verseRef} translation={translation} onStrongs={onStrongs} />
+      </div>
     </Sheet>
+  )
+}
+
+export function Histogram({ counts }) {
+  if (!counts?.length) return null
+  const max = Math.max(...counts, 1)
+  return (
+    <>
+      <div className="histogram">
+        {counts.map((n, i) => (
+          <div
+            key={i}
+            className={`histogram__bar${n === max ? ' histogram__bar--peak' : ''}`}
+            style={{ height: `${Math.max(6, (n / max) * 100)}%` }}
+          />
+        ))}
+      </div>
+      <div className="histogram__labels">
+        <span>Genesis</span>
+        <span>Gospels</span>
+        <span>Revelation</span>
+      </div>
+    </>
   )
 }
 
@@ -235,13 +384,8 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
     () => api.strongsVerses(number, { translation, limit: 25 }),
     [number, translation],
   )
-  // A fresh word starts the list over; without this the previous word's
-  // occurrences stay stacked underneath the new one's.
   useEffect(() => setPages([]), [number, translation])
 
-  // Which word the list currently belongs to. A "load more" already in flight
-  // when the reader taps through to another word must not land its page --
-  // or its error -- on top of the new one's occurrences.
   const showing = `${number}/${translation}`
   const current = useRef(showing)
   current.current = showing
@@ -255,11 +399,7 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
     setBusy(true)
     setError(null)
     try {
-      const next = await api.strongsVerses(number, {
-        translation,
-        limit: 25,
-        offset: refs.length,
-      })
+      const next = await api.strongsVerses(number, { translation, limit: 25, offset: refs.length })
       if (current.current === asked) setPages((rows) => [...rows, ...next.refs])
     } catch (e) {
       if (current.current === asked) setError(e)
@@ -271,11 +411,7 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
   const d = entry.data
 
   return (
-    <Sheet
-      title={d?.lemma ? `${d.lemma}` : number}
-      subtitle={`${number}${d?.language ? ` · ${d.language}` : ''}`}
-      onClose={onClose}
-    >
+    <Sheet eyebrow={d?.language} title={d?.lemma ?? number} onClose={onClose}>
       {onBack && (
         <button type="button" className="link" onClick={onBack}>
           ← Back to {backLabel}
@@ -286,19 +422,14 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
       <ErrorNote error={entry.error} />
 
       {d && (
-        <article className="card card--verdigris">
-          <div className="card__head">
-            <CallNumber>{d.id}</CallNumber>
+        <Panel>
+          <div className="result__head">
+            <Badge>{d.id}</Badge>
             {d.translit && <span className="tag">{d.translit}</span>}
             {d.pron && <span className="tag">{d.pron}</span>}
-            <span className="tag" style={{ marginLeft: 'auto' }}>
-              {d.occurrences.toLocaleString()}×
-            </span>
+            <span className="tag" style={{ marginLeft: 'auto' }}>{d.occurrences.toLocaleString()}×</span>
           </div>
-          <p className={`lemma lemma--${d.lang}`} dir={d.direction}>
-            {d.lemma}
-          </p>
-          {d.definition && <p className="card__text">{d.definition}</p>}
+          {d.definition && <p className="result__text">{d.definition}</p>}
           {d.derivation && <p className="quote">{d.derivation}</p>}
           {d.kjv_usage && (
             <p className="quote">
@@ -308,13 +439,16 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
           {d.senses?.length > 0 && (
             <div className="senses">
               {d.senses.map((s) => (
-                <span key={s.gloss} className="tag tag--count">
-                  {s.gloss} · {s.count}
-                </span>
+                <span key={s.gloss} className="tag">{s.gloss} · {s.count}</span>
               ))}
             </div>
           )}
-        </article>
+          {d.histogram && (
+            <div className="stack stack--tight" style={{ marginTop: '0.9rem' }}>
+              <Histogram counts={d.histogram} />
+            </div>
+          )}
+        </Panel>
       )}
 
       {first.loading && <Spinner label="Gathering" />}
@@ -324,36 +458,30 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
         <>
           <div className="section__head">
             <span className="section__title">Every occurrence</span>
-            <span className="tag tag--onink">
-              {total.toLocaleString()} {total === 1 ? 'verse' : 'verses'} ·{' '}
-              {first.data.translation}
-            </span>
+            <span className="tag">{total.toLocaleString()} {total === 1 ? 'verse' : 'verses'} · {first.data.translation}</span>
           </div>
-          <div className="stack">
+          <div className="results">
             {refs.map((ref) => (
-              <article key={ref.ref} className="card">
-                <div className="card__head">
-                  <CallNumber onClick={() => onRead(ref.book, ref.chapter, ref.verse)}>
-                    {ref.ref}
-                  </CallNumber>
-                  <span className="tag">{ref.label}</span>
-                  {ref.hits > 1 && (
-                    <span className="tag tag--count">{ref.hits}×</span>
-                  )}
+              <article key={ref.ref} className="result">
+                <div className="result__head">
+                  <button
+                    type="button"
+                    className="result__ref"
+                    style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+                    onClick={() => onRead(ref.book, ref.chapter, ref.verse)}
+                  >
+                    {ref.label}
+                  </button>
+                  {ref.hits > 1 && <span className="tag">{ref.hits}×</span>}
                 </div>
-                {ref.text && <p className="card__text">{ref.text}</p>}
+                {ref.text && <p className="result__text">{ref.text}</p>}
                 <p className="quote">{ref.glosses}</p>
               </article>
             ))}
           </div>
           <ErrorNote error={error} />
           {more && (
-            <button
-              type="button"
-              className="btn"
-              onClick={loadMore}
-              disabled={busy}
-            >
+            <button type="button" className="btn" onClick={loadMore} disabled={busy}>
               {busy ? 'Loading…' : `Load more (${total - refs.length} left)`}
             </button>
           )}
@@ -363,56 +491,60 @@ export function StrongsSheet({ number, translation, onClose, onRead, onBack, bac
   )
 }
 
-/** Related verses, by way of the Nave's topics a verse is filed under. */
-export function CrossRefSheet({ verseRef, translation, onClose, onRead, onTopic }) {
-  const { data, error, loading } = useAsync(
-    () => api.crossRefs(verseRef, translation),
-    [verseRef, translation],
-  )
-  const heading = useAsync(
-    () => api.verse(verseRef, translation).then((v) => v.label),
-    [verseRef, translation],
-  )
-  const label = heading.data ?? verseRef
+/** Related verses, by way of the Nave's topics a verse is filed under -- the
+ * body shared by the mobile Cross-references sheet and the desktop rail's
+ * Compare tab. */
+export function ComparePanel({ verseRef, translation, onRead, onTopic }) {
+  const { data, error, loading } = useAsync(() => api.crossRefs(verseRef, translation), [verseRef, translation])
 
   return (
-    <Sheet title="Cross-references" subtitle={`${verseRef} · ${label}`} onClose={onClose}>
+    <>
       {loading && <Spinner label="Gathering" />}
       <ErrorNote error={error} />
-      {data?.topics?.length === 0 && (
-        <p className="muted">Nave's does not file this verse under any topic.</p>
-      )}
+      {data?.topics?.length === 0 && <p className="muted">Nave's does not file this verse under any topic.</p>}
       <div className="stack">
         {data?.topics?.map((group) => (
           <div key={group.topic_id}>
             <div className="section__head">
-              <button
-                type="button"
-                className="link"
-                onClick={() => onTopic(group.topic_id)}
-              >
+              <button type="button" className="link" onClick={() => onTopic(group.topic_id)}>
                 {group.topic}
               </button>
-              <span className="tag tag--onink">{group.ref_count} refs</span>
+              <span className="tag">{group.ref_count} refs</span>
             </div>
-            <div className="stack">
+            <div className="results">
               {group.refs.map((ref) => (
-                <article key={ref.ref} className="card card--verdigris">
-                  <div className="card__head">
-                    <CallNumber
+                <article key={ref.ref} className="result">
+                  <div className="result__head">
+                    <button
+                      type="button"
+                      className="result__ref"
+                      style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
                       onClick={() => onRead(ref.book, ref.chapter, ref.verse_start)}
                     >
                       {ref.ref}
-                    </CallNumber>
-                    <span className="tag">{data.translation}</span>
+                    </button>
+                    <span className="result__kind">{data.translation}</span>
                   </div>
-                  <p className="card__text">{ref.text}</p>
+                  <p className="result__text">{ref.text}</p>
                 </article>
               ))}
             </div>
           </div>
         ))}
       </div>
+    </>
+  )
+}
+
+export function CrossRefSheet({ verseRef, translation, onClose, onRead, onTopic }) {
+  const heading = useAsync(() => api.verse(verseRef, translation), [verseRef, translation])
+  return (
+    <Sheet
+      eyebrow={`${verseRef} · ${heading.data?.label ?? verseRef}`}
+      title="Cross-references"
+      onClose={onClose}
+    >
+      <ComparePanel verseRef={verseRef} translation={translation} onRead={onRead} onTopic={onTopic} />
     </Sheet>
   )
 }

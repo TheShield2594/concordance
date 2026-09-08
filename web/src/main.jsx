@@ -1,13 +1,11 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 
-import '@fontsource/antic'
-// Behind Signifier, which is licensed and only renders where the device has
-// it: Source Serif 4 ships the Greek subset, so the New Testament stays
-// covered whichever serif wins.
+// Newsreader is the reading voice: headings and scripture. It has no Greek
+// subset, so Source Serif 4 stands behind it for the interlinear -- same
+// weight and colour, just there for the alphabet Newsreader doesn't cover.
+import '@fontsource-variable/newsreader'
 import '@fontsource-variable/source-serif-4'
-import '@fontsource/jetbrains-mono/400.css'
-import '@fontsource/jetbrains-mono/500.css'
 // Pointed Hebrew falls back to whatever the device has unless something with
 // niqqud is bundled alongside it.
 import '@fontsource/noto-serif-hebrew/hebrew-400.css'

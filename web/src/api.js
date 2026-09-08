@@ -40,9 +40,10 @@ const qs = (params) =>
 
 export const api = {
   meta: () => request('/meta'),
+  today: (translation) => request(`/today?${qs({ translation })}`),
 
-  search: ({ q, translation = 'ALL', limit = 25, offset = 0, include, sort }) =>
-    request(`/search?${qs({ q, translation, limit, offset, include, sort })}`),
+  search: ({ q, translation = 'ALL', limit = 25, offset = 0, include, sort, mode }) =>
+    request(`/search?${qs({ q, translation, limit, offset, include, sort, mode })}`),
 
   topics: ({ q = '', limit = 60, offset = 0 } = {}) =>
     request(`/topics?${qs({ q, limit, offset })}`),
@@ -75,4 +76,27 @@ export const api = {
     request(`/notes/${id}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
 
   deleteNote: (id) => request(`/notes/${id}`, { method: 'DELETE' }),
+
+  highlights: (ref) => request(`/highlights?${qs({ ref })}`),
+  addHighlight: (verseRef) =>
+    request('/highlights', { method: 'POST', body: JSON.stringify({ verse_ref: verseRef }) }),
+  removeHighlight: (verseRef) =>
+    request(`/highlights/${enc(verseRef)}`, { method: 'DELETE' }),
+
+  threads: (ref) => request(`/threads?${qs({ ref })}`),
+  thread: (id, translation) => request(`/threads/${enc(id)}?${qs({ translation })}`),
+  createThread: (name) =>
+    request('/threads', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameThread: (id, name) =>
+    request(`/threads/${enc(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteThread: (id) => request(`/threads/${enc(id)}`, { method: 'DELETE' }),
+  addThreadItem: (id, { verseRef, note }) =>
+    request(`/threads/${enc(id)}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ verse_ref: verseRef, note }),
+    }),
+  updateThreadItem: (itemId, note) =>
+    request(`/threads/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+  removeThreadItem: (itemId) =>
+    request(`/threads/items/${itemId}`, { method: 'DELETE' }),
 }
