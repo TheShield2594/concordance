@@ -7,9 +7,17 @@ keep your notes. All of it lives in a single SQLite file.
 No accounts. No API keys. No calls out to anybody's server once it's installed. It
 starts up, opens a file on disk, and answers questions about it.
 
-| Search | Topics | Read |
-| :----: | :----: | :--: |
-| <img src="docs/screenshots/search.png" width="260" alt="Search view: meaning-first results for anxious, exact hits tagged Exact with matched words underlined"> | <img src="docs/screenshots/topic.png" width="260" alt="Topics view: the PRAYER topic, its references grouped under Nave's sub-headings"> | <img src="docs/screenshots/read.png" width="260" alt="Read view: Philippians 4 in the KJV, verse numbers as small serif superscripts, a note dot beside verse 6"> |
+| Today | Search | Read |
+| :---: | :----: | :--: |
+| <img src="docs/screenshots/today.png" width="240" alt="Today view: the verse of the day, a Continue reading card for John 1, and the Light &amp; darkness in John study thread"> | <img src="docs/screenshots/search.png" width="240" alt="Search view: meaning-first results for anxious, exact hits tagged Exact with matched words underlined"> | <img src="docs/screenshots/read.png" width="240" alt="Read view: Philippians 4 in the KJV, verse numbers as small serif superscripts, a note dot beside verse 6"> |
+
+| Original | Topics | Threads |
+| :------: | :----: | :-----: |
+| <img src="docs/screenshots/original.png" width="240" alt="Original view: John 1:1 in Greek, word by word, λόγος selected with its Strong's entry and occurrence histogram open"> | <img src="docs/screenshots/topic.png" width="240" alt="Topics view: the PRAYER topic, its references grouped under Nave's sub-headings"> | <img src="docs/screenshots/threads.png" width="240" alt="A study thread, Light &amp; darkness in John, holding John 1:5 and John 8:12 with a note on one of them"> |
+
+On a screen wide enough for it, the phone's tabs and sheets become a three-column study desk:
+
+<img src="docs/screenshots/desktop.png" width="720" alt="The Mac layout: a sidebar of books and threads, John 1 centred in the reading column, and the Original tab open in the right rail for John 1:1">
 
 ## Getting it running
 
