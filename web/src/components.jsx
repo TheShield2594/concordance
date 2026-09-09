@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import { IconClose, IconSearch } from './icons.jsx'
+import { IconClose, IconMoon, IconSearch, IconSun } from './icons.jsx'
 
 /** A dark badge, light type -- Strong's numbers, occurrence counts. */
 export function Badge({ children, tone, onClick, title }) {
@@ -12,6 +12,60 @@ export function Badge({ children, tone, onClick, title }) {
     <button type="button" className={className} onClick={onClick} title={title}>
       {children}
     </button>
+  )
+}
+
+/**
+ * A reference, stamped. Dark badge, light monospace, the same shape in every
+ * theme -- the app's signature element, and the one piece of chrome that never
+ * varies. Use it where a reference names what is on screen; a reference inside
+ * a flowing list stays quiet.
+ *
+ * `aside` is the second rank inside the same stamp -- a translation code, or
+ * the human label beside a call number -- set behind a hairline.
+ */
+export function Reference({ children, aside, onClick, title, className }) {
+  const cls = ['ref-stamp', className].filter(Boolean).join(' ')
+  const inner = (
+    <>
+      <span>{children}</span>
+      {aside && <span className="ref-stamp__aside">{aside}</span>}
+    </>
+  )
+  if (!onClick) return <span className={cls}>{inner}</span>
+  return (
+    <button type="button" className={cls} onClick={onClick} title={title}>
+      {inner}
+    </button>
+  )
+}
+
+/* Day and Night are choices; Auto is the absence of one, so it sits between
+   them rather than at an end. */
+const READING_MODES = [
+  { id: 'day', label: 'Day', Icon: IconSun },
+  { id: 'auto', label: 'Auto' },
+  { id: 'night', label: 'Night', Icon: IconMoon },
+]
+
+/** Which palette the reading surface uses: follow the system, or don't. */
+export function ReadingModeSwitch({ value, onChange }) {
+  return (
+    <div className="mode-switch" role="group" aria-label="Reading mode">
+      {READING_MODES.map(({ id, label, Icon }) => (
+        <button
+          key={id}
+          type="button"
+          className="mode-switch__btn"
+          aria-pressed={value === id}
+          aria-label={`${label} reading`}
+          title={`${label} reading`}
+          onClick={() => onChange(id)}
+        >
+          {Icon ? <Icon /> : 'A'}
+        </button>
+      ))}
+    </div>
   )
 }
 

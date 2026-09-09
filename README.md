@@ -7,9 +7,9 @@ keep your notes. All of it lives in a single SQLite file.
 No accounts. No API keys. No calls out to anybody's server once it's installed. It
 starts up, opens a file on disk, and answers questions about it.
 
-| Today | Search | Read |
-| :---: | :----: | :--: |
-| <img src="docs/screenshots/today.png" width="240" alt="Today view: the verse of the day, a Continue reading card for John 1, and the Light &amp; darkness in John study thread"> | <img src="docs/screenshots/search.png" width="240" alt="Search view: meaning-first results for anxious, exact hits tagged Exact with matched words underlined"> | <img src="docs/screenshots/read.png" width="240" alt="Read view: Philippians 4 in the KJV, verse numbers as small serif superscripts, a note dot beside verse 6"> |
+| Today | Search | Read | Night |
+| :---: | :----: | :--: | :---: |
+| <img src="docs/screenshots/today.png" width="240" alt="Today view: the verse of the day centred under a small ornament with its reference stamped beneath, a Continue reading card for John 1, and the Light &amp; darkness in John study thread"> | <img src="docs/screenshots/search.png" width="240" alt="Search view: meaning-first results for anxious, exact hits tagged Exact with matched words underlined"> | <img src="docs/screenshots/read.png" width="240" alt="Read view: Philippians 4 in the KJV, verse numbers as small serif superscripts, verse 6 highlighted with a note dot"> | <img src="docs/screenshots/night.png" width="240" alt="The same chapter in night reading: warm near-black page, scripture a step below full contrast, the moon selected in the day-auto-night switch"> |
 
 | Original | Topics | Threads |
 | :------: | :----: | :-----: |
@@ -70,7 +70,9 @@ morning," "Prayer test proposed by Elijah," and so on down the list.
 **Reading** gives you the chapter with its verses numbered, prev and next running
 across book boundaries, and a dot beside any verse you've written on. Select a
 verse (or click it, on the Mac) and Highlight, Note, Original and Share surface
-right there, rather than living in permanent chrome around the text.
+right there, rather than living in permanent chrome around the text. Day, Auto and
+Night ride in the chapter head: night reading is a warm near-black tuned for holding
+a chapter, and it belongs to the reader alone.
 
 **Notes and highlights** attach to a verse and live in the same database as
 everything else, which means notes surface in search results next to scripture.
@@ -255,8 +257,18 @@ Original sheet, a study thread's card -- used deliberately inside the light them
 rather than as a separate mode. The system's own dark mode reuses that same
 near-black-and-sage vocabulary for the whole shell. Newsreader sets headings and
 scripture (Source Serif 4 stands behind it for the Greek subset it doesn't carry);
-the system sans (SF Pro on a Mac, its equivalent elsewhere) does the chrome. No
-monospace: references read as plain type, not a call-number stamp.
+the system sans (SF Pro on a Mac, its equivalent elsewhere) does the chrome. A
+reference that names what's on screen — the verse of the day, the head of a sheet,
+the chapter you're reading — is stamped: dark badge, light monospace, the same shape
+everywhere, and the platform's own mono rather than a downloaded one. References
+inside a list of twenty stay plain type; twenty stamps is a page of badges.
+
+The reader is the one screen with a palette of its own. Day, Auto and Night sit in
+the chapter head, and Night is not the system dark theme applied to the page: it is
+warm rather than blue, and scripture sits a step below maximum contrast (about
+11.9:1, against the dark theme's 15:1) because light serif on near-black blooms, and
+the bloom is what makes twenty minutes in one chapter tiring. The choice sticks, and
+lasts only as long as you're in the reader — everything else follows the system.
 
 Scripture is the only thing at full contrast. Verse numbers, chrome and labels all
 sit a step back, and depth -- the original languages, cross-references, a thread's
