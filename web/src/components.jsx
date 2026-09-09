@@ -1,13 +1,10 @@
 import { useEffect, useRef } from 'react'
 
-/** The call number: a reference as a stamped catalogue mark. PHP.4.6 */
-export function CallNumber({ children, onInk, large, onClick, title }) {
-  const className = [
-    'callno',
-    onInk && 'callno--onink',
-    large && 'callno--lg',
-    onClick && 'callno--button',
-  ]
+import { IconClose, IconSearch } from './icons.jsx'
+
+/** A dark badge, light type -- Strong's numbers, occurrence counts. */
+export function Badge({ children, tone, onClick, title }) {
+  const className = ['badge', tone && `badge--${tone}`, onClick && 'badge--button']
     .filter(Boolean)
     .join(' ')
   if (!onClick) return <span className={className}>{children}</span>
@@ -25,8 +22,8 @@ export function SearchField({ value, onChange, placeholder, autoFocus }) {
   }, [autoFocus])
   return (
     <div className="field">
-      <span className="field__glyph" aria-hidden="true">
-        ⌕
+      <span className="field__icon">
+        <IconSearch size={17} />
       </span>
       <input
         ref={ref}
@@ -46,7 +43,7 @@ export function SearchField({ value, onChange, placeholder, autoFocus }) {
           onClick={() => onChange('')}
           aria-label="Clear search"
         >
-          ✕
+          <IconClose size={13} />
         </button>
       )}
     </div>
@@ -71,12 +68,24 @@ export function Chips({ options, value, onChange, label }) {
   )
 }
 
+/** The bordered / filled / dark container the whole app builds panels from. */
+export function Panel({ variant, flush, className, children, as: As = 'div', ...rest }) {
+  const cls = ['panel', variant && `panel--${variant}`, flush && 'panel--flush', className]
+    .filter(Boolean)
+    .join(' ')
+  return (
+    <As className={cls} {...rest}>
+      {children}
+    </As>
+  )
+}
+
 export function Section({ title, aside, children }) {
   return (
-    <section>
+    <section className="section">
       <div className="section__head">
         <span className="section__title">{title}</span>
-        {aside && <span className="tag tag--onink">{aside}</span>}
+        {aside !== undefined && <span className="section__aside">{aside}</span>}
       </div>
       {children}
     </section>
@@ -99,7 +108,7 @@ export function Spinner({ label = 'Searching' }) {
 export function ErrorNote({ error }) {
   if (!error) return null
   return (
-    <Empty mark="Error">
+    <Empty mark="Something went wrong">
       <p>{error.message}</p>
     </Empty>
   )
@@ -117,43 +126,42 @@ export function Marked({ segments, text }) {
   )
 }
 
+const MATCH_LABEL = { exact: 'Exact', meaning: 'Related' }
+
 /**
- * A search result. Reference stamp, translation tag, verse text with the
- * matched terms marked, and the three actions.
+ * A search result: reference, how it matched, verse text, and the actions
+ * that follow it -- a flowing row with a hairline beneath it, not a boxed
+ * card. Scripture carries the weight; the chrome around it stays quiet.
  */
-export function VerseCard({ verse, onRead, onNote, onCrossRefs, onOriginal, noteCount }) {
+export function ResultRow({ verse, onRead, onNote, onCrossRefs, onOriginal, noteCount }) {
   return (
-    <article className="card">
-      <div className="card__head">
-        <CallNumber>{verse.ref}</CallNumber>
-        <span className="tag">{verse.translation}</span>
-        <span className="tag" style={{ marginLeft: 'auto' }}>
-          {verse.book_name} {verse.chapter}:{verse.verse}
+    <article className="result">
+      <div className="result__head">
+        <span className="result__ref">{verse.book_name} {verse.chapter}:{verse.verse}</span>
+        <span className="result__kind">
+          {/* Several translations can appear in one ALL-translations list, so
+              the kind tag never replaces the translation code -- it just
+              rides alongside it. */}
+          {verse.match_kind && MATCH_LABEL[verse.match_kind]
+            ? `${MATCH_LABEL[verse.match_kind]} · ${verse.translation}`
+            : verse.translation}
         </span>
       </div>
-      <p className="card__text">
+      <p className="result__text">
         <Marked segments={verse.segments} text={verse.text} />
       </p>
-      <div className="card__actions">
-        <button type="button" className="action" onClick={() => onRead(verse)}>
+      <div className="result__actions">
+        <button type="button" className="result__action" onClick={() => onRead(verse)}>
           Read chapter
         </button>
-        <button
-          type="button"
-          className="action action--verdigris"
-          onClick={() => onNote(verse)}
-        >
+        <button type="button" className="result__action" onClick={() => onNote(verse)}>
           {noteCount ? `Notes (${noteCount})` : 'Add note'}
         </button>
-        <button
-          type="button"
-          className="action action--verdigris"
-          onClick={() => onCrossRefs(verse)}
-        >
+        <button type="button" className="result__action" onClick={() => onCrossRefs(verse)}>
           Cross-refs
         </button>
         {onOriginal && (
-          <button type="button" className="action" onClick={() => onOriginal(verse)}>
+          <button type="button" className="result__action" onClick={() => onOriginal(verse)}>
             Original
           </button>
         )}
@@ -166,7 +174,7 @@ export function TopicRow({ topic, onOpen }) {
   return (
     <button type="button" className="row" onClick={() => onOpen(topic)}>
       <span className="row__name">{topic.name}</span>
-      <span className="tag tag--count">
+      <span className="tag">
         {topic.ref_count} {topic.ref_count === 1 ? 'ref' : 'refs'}
       </span>
     </button>
@@ -176,12 +184,10 @@ export function TopicRow({ topic, onOpen }) {
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
 
-/** Bottom sheet used for the note editor and cross-references. */
-export function Sheet({ title, subtitle, onClose, children }) {
+/** Bottom sheet: the note editor, cross-references, Strong's, and (in dark
+ * dress) the Original sheet. */
+export function Sheet({ title, eyebrow, onClose, dark, children }) {
   const panel = useRef(null)
-  // Callers pass an inline arrow, so onClose is a new function every render.
-  // Holding it in a ref keeps the effect below to mount and unmount -- otherwise
-  // every parent render tears it down and yanks focus back out of the sheet.
   const close = useRef(onClose)
   close.current = onClose
 
@@ -195,7 +201,6 @@ export function Sheet({ title, subtitle, onClose, children }) {
         return
       }
       if (e.key !== 'Tab' || !panel.current) return
-      // Keep Tab inside the sheet while it is open.
       const stops = [...panel.current.querySelectorAll(FOCUSABLE)].filter(
         (el) => el.offsetParent !== null,
       )
@@ -227,7 +232,7 @@ export function Sheet({ title, subtitle, onClose, children }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="sheet"
+        className={`sheet${dark ? ' sheet--dark' : ''}`}
         ref={panel}
         tabIndex={-1}
         role="dialog"
@@ -236,11 +241,11 @@ export function Sheet({ title, subtitle, onClose, children }) {
       >
         <div className="sheet__head">
           <div>
+            {eyebrow && <p className="sheet__eyebrow">{eyebrow}</p>}
             <h2 className="sheet__title">{title}</h2>
-            {subtitle && <div className="tag tag--onink">{subtitle}</div>}
           </div>
-          <button type="button" className="btn" onClick={onClose}>
-            Close
+          <button type="button" className="sheet__close" onClick={onClose} aria-label="Close">
+            <IconClose size={15} />
           </button>
         </div>
         {children}

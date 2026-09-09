@@ -3,3 +3,7 @@ uvicorn[standard]>=0.27
 # uvicorn pulls h11 in; anything below 0.16 mishandles chunked
 # request bodies (CVE-2025-43859).
 h11>=0.16
+# Meaning search: cosine ranking against the verse embeddings the ETL wrote.
+# Nothing heavier -- the query-time TF-IDF/SVD transform is hand-rolled in
+# server/embeddings.py so scikit-learn stays a build-time-only dependency.
+numpy>=1.26

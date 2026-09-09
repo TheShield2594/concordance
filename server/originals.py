@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import unicodedata
 
 LANGUAGES = {
     "heb": ("Hebrew", "rtl"),
@@ -27,6 +28,18 @@ def parse_strongs(value: str) -> str | None:
     if not m:
         return None
     return f"{m.group(1).upper()}{int(m.group(2))}"
+
+
+def fold(text: str) -> str:
+    """Lowercase, accent-stripped form for matching transliterations.
+
+    A transliteration carries its accent marks ("lógos"), which a person
+    typing on an English keyboard has no way to reproduce ("logos"). NFKD
+    splits the base letter from its combining accent so the accent can be
+    dropped without disturbing the letter.
+    """
+    decomposed = unicodedata.normalize("NFKD", text or "")
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
 
 
 def word_row(r: sqlite3.Row) -> dict:

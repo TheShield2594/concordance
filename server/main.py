@@ -6,6 +6,7 @@ translations were pulled once at setup by etl/fetch_sources.py.
 """
 from __future__ import annotations
 
+import datetime
 import sqlite3
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import db, originals, refs, search
+from . import db, embeddings, originals, refs, search
 
 app = FastAPI(title="Concordance", version="1.0", docs_url="/api/docs")
 
@@ -44,6 +45,37 @@ def valid_translations(con: sqlite3.Connection) -> set[str]:
             r["code"] for r in con.execute("SELECT code FROM translations")
         }
     return _valid_translations
+
+
+# Loaded once from the request that first needs it: 31k verses' worth of
+# vectors, held in memory rather than re-read from SQLite every search.
+_meaning_index: embeddings.MeaningIndex | None = None
+_meaning_index_loaded = False
+
+
+def meaning_index(con: sqlite3.Connection) -> embeddings.MeaningIndex | None:
+    global _meaning_index, _meaning_index_loaded
+    if not _meaning_index_loaded:
+        _meaning_index = embeddings.load(con)
+        _meaning_index_loaded = True
+    return _meaning_index
+
+
+# Strong's dictionary is read-only and small enough to hold in memory,
+# accent-folded, for lookup: a transliteration carries marks ("lógos") a
+# person typing "logos" on an English keyboard has no way to reproduce.
+_strongs_folded: list[tuple[sqlite3.Row, str, str, str]] | None = None
+
+
+def strongs_folded(con: sqlite3.Connection) -> list[tuple[sqlite3.Row, str, str, str]]:
+    global _strongs_folded
+    if _strongs_folded is None:
+        _strongs_folded = [
+            (r, originals.fold(r["translit"] or ""), originals.fold(r["lemma"] or ""),
+             originals.fold(r["definition"] or ""))
+            for r in con.execute("SELECT * FROM strongs_entries")
+        ]
+    return _strongs_folded
 
 
 def chip_order(con: sqlite3.Connection) -> list[str]:
@@ -140,21 +172,34 @@ def api_search(
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
     sort: str = Query("relevance", pattern="^(relevance|canonical)$"),
+    mode: str = Query("meaning", pattern="^(meaning|exact|strongs)$"),
     include: str = Query("verses,topics,notes"),
     con: sqlite3.Connection = Depends(get_db),
 ):
-    """Full-text search over verses, Nave's topic names and personal notes."""
+    """Full-text search over verses, Nave's topic names and personal notes.
+
+    `mode` shapes the verse results. "exact" is FTS5 alone, the way search
+    always worked. "meaning" (the default) adds verses the on-device LSA
+    index calls close in sense even where they share no words -- each verse
+    comes back tagged with `match_kind` so the client can tell exact hits
+    from meaning-only ones. "strongs" treats the query as naming a Hebrew or
+    Greek word rather than English text: it skips the verse search and
+    widens the dictionary lookup from an exact number to a lemma or
+    transliteration match too.
+    """
     translation = check_translation(con, translation)
     match = search.build_match(q)
     wanted = {p.strip() for p in include.split(",")}
     empty = {
         "query": q,
         "translation": translation,
+        "mode": mode,
         "verses": [],
         "verse_total": 0,
         "topics": [],
         "notes": [],
         "strongs": None,
+        "strongs_matches": [],
         "reference": None,
     }
     if not match:
@@ -185,7 +230,29 @@ def api_search(
             ).fetchone()[0]
             result["strongs"] = entry
 
-    if "verses" in wanted:
+    # "Strong's" mode reads the query as naming a Hebrew or Greek word rather
+    # than English text: a transliteration or lemma fragment ("logos") widens
+    # past the exact-number lookup above. Folded to strip transliteration
+    # accents ("lógos") an English keyboard can't type.
+    if mode == "strongs":
+        needle = originals.fold(" ".join(search.parse_terms(q)))
+        if needle:
+            hits = [
+                (r, translit == needle, translit.startswith(needle))
+                for r, translit, lemma, definition in strongs_folded(con)
+                if needle in translit or needle in lemma or needle in definition
+            ]
+            hits.sort(key=lambda h: (not h[1], not h[2], len(h[0]["translit"] or "")))
+            top = hits[:12]
+            matches = [originals.entry_row(r) for r, *_ in top]
+            for m, (r, *_) in zip(matches, top):
+                m["occurrences"] = con.execute(
+                    "SELECT count(*) FROM original_words WHERE strongs_base = ?",
+                    [r["id"]],
+                ).fetchone()[0]
+            result["strongs_matches"] = matches
+
+    if "verses" in wanted and mode != "strongs":
         where = "verses_fts MATCH ?"
         params: list = [match]
         if translation != "ALL":
@@ -210,12 +277,50 @@ def api_search(
             [search.MARK_OPEN, search.MARK_CLOSE, *params, limit, offset],
         ).fetchall()
         result["verses"] = [verse_row(r, marked=True) for r in rows]
+        for v in result["verses"]:
+            v["match_kind"] = "exact"
         result["verse_total"] = con.execute(
             f"""SELECT count(*) FROM verses_fts
                 JOIN verses v ON v.id = verses_fts.rowid
                 WHERE {where}""",
             params,
         ).fetchone()[0]
+
+        # Meaning results ride along on the first page only -- they are not
+        # part of the FTS ranking "Load more" pages through, just a fixed set
+        # of neighbours shown alongside it. `verse_total` stays the true FTS
+        # count throughout: it is also the paging bound "Load more" uses to
+        # ask for the next slice of *FTS* results, and inflating it with a
+        # one-off batch of meaning-only extras would either overstate the
+        # match count after page 2 (which carries no extras) or make the
+        # client ask the FTS query for an offset past its real result set.
+        if mode == "meaning" and offset == 0:
+            index = meaning_index(con)
+            if index is not None:
+                seen = {(v["book"], v["chapter"], v["verse"]) for v in result["verses"]}
+                meaning_translation = translation if translation != "ALL" else "KJV"
+                extra = []
+                for (b, c, vs), score in index.nearest(q, limit=limit * 4):
+                    if (b, c, vs) in seen or score < 0.35:
+                        continue
+                    row = con.execute(
+                        """SELECT vv.id, vv.book, vv.chapter, vv.verse, vv.translation,
+                                  vv.text, bb.name AS book_name
+                           FROM verses vv JOIN books bb ON bb.code = vv.book
+                           WHERE vv.book = ? AND vv.chapter = ? AND vv.verse = ?
+                             AND vv.translation = ?""",
+                        [b, c, vs, meaning_translation],
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    seen.add((b, c, vs))
+                    vr = verse_row(row)
+                    vr["match_kind"] = "meaning"
+                    vr["score"] = round(score, 3)
+                    extra.append(vr)
+                    if len(extra) >= limit:
+                        break
+                result["verses"].extend(extra)
 
     if "topics" in wanted:
         result["topics"] = topic_matches(con, q, limit=12)
@@ -452,10 +557,25 @@ def get_chapter(
             [book, chapter],
         )
     }
+    highlighted = {
+        r[0]
+        for r in con.execute(
+            "SELECT verse FROM highlights WHERE book = ? AND chapter = ?",
+            [book, chapter],
+        )
+    }
+    threaded: set[int] = set()
+    for start, end in con.execute(
+        "SELECT verse_start, verse_end FROM thread_items WHERE book = ? AND chapter = ?",
+        [book, chapter],
+    ):
+        threaded.update(range(start, end + 1))
     verses = []
     for r in rows:
         v = verse_row(r)
         v["note_count"] = noted.get(r["verse"], 0)
+        v["highlighted"] = r["verse"] in highlighted
+        v["in_thread"] = r["verse"] in threaded
         verses.append(v)
 
     last_chapter = con.execute(
@@ -700,7 +820,26 @@ def strongs_entry(number: str, con: sqlite3.Connection = Depends(get_db)):
             [key],
         )
     ]
+    out["histogram"] = strongs_histogram(con, key)
     return out
+
+
+HISTOGRAM_BUCKETS = 24
+
+
+def strongs_histogram(con: sqlite3.Connection, key: str) -> list[int]:
+    """Occurrence counts across the canon, Genesis to Revelation, in fixed
+    buckets -- the shape behind the small bar chart on a Strong's entry."""
+    counts = [0] * HISTOGRAM_BUCKETS
+    for ordinal, in con.execute(
+        """SELECT b.ordinal FROM original_words w
+           JOIN books b ON b.code = w.book
+           WHERE w.strongs_base = ?""",
+        [key],
+    ):
+        bucket = min(HISTOGRAM_BUCKETS - 1, (ordinal - 1) * HISTOGRAM_BUCKETS // 66)
+        counts[bucket] += 1
+    return counts
 
 
 @app.get("/api/strongs/{number}/verses")
@@ -932,6 +1071,398 @@ def stats(con: sqlite3.Connection = Depends(get_db)):
         "verses": con.execute("SELECT count(*) FROM verses").fetchone()[0],
         "topics": con.execute("SELECT count(*) FROM topics").fetchone()[0],
         "notes": con.execute("SELECT count(*) FROM notes").fetchone()[0],
+        "threads": con.execute("SELECT count(*) FROM study_threads").fetchone()[0],
+    }
+
+
+# --------------------------------------------------------------------------
+# highlights
+# --------------------------------------------------------------------------
+
+class HighlightIn(BaseModel):
+    verse_ref: str = Field(..., examples=["PHP.4.6"])
+
+
+def highlight_row(r: sqlite3.Row) -> dict:
+    return {
+        "id": r["id"],
+        "verse_ref": r["verse_ref"],
+        "book": r["book"],
+        "book_name": r["book_name"],
+        "chapter": r["chapter"],
+        "verse": r["verse"],
+        "created_at": r["created_at"],
+        "label": refs.label(
+            r["book_name"], refs.Ref(r["book"], r["chapter"], r["verse"], r["verse"])
+        ),
+    }
+
+
+HIGHLIGHT_SELECT = """
+    SELECT h.*, b.name AS book_name FROM highlights h JOIN books b ON b.code = h.book
+"""
+
+
+@app.get("/api/highlights")
+def list_highlights(
+    ref: str = Query(""),
+    limit: int = Query(200, ge=1, le=500),
+    con: sqlite3.Connection = Depends(get_db),
+):
+    if ref:
+        parsed = refs.parse(ref)
+        if parsed is None:
+            raise HTTPException(400, "bad reference")
+        rows = con.execute(
+            HIGHLIGHT_SELECT + " WHERE h.verse_ref = ?", [str(parsed)]
+        ).fetchall()
+        return {"highlights": [highlight_row(r) for r in rows]}
+    rows = con.execute(
+        HIGHLIGHT_SELECT + " ORDER BY h.created_at DESC LIMIT ?", [limit]
+    ).fetchall()
+    return {"highlights": [highlight_row(r) for r in rows]}
+
+
+@app.post("/api/highlights", status_code=201)
+def create_highlight(body: HighlightIn, con: sqlite3.Connection = Depends(get_db)):
+    parsed = refs.parse(body.verse_ref)
+    # A highlight marks one verse. A range would store verse_ref="PHP.4.6-7"
+    # against verse=6 alone -- DELETE /api/highlights/PHP.4.6 could never
+    # address it, and PHP.4.6 and PHP.4.6-7 would collide oddly against the
+    # UNIQUE(verse_ref) constraint despite naming overlapping verses.
+    if parsed is None or not parsed.verse_start or parsed.verse_end != parsed.verse_start:
+        raise HTTPException(400, "expected a single verse, like PHP.4.6")
+    exists = con.execute(
+        "SELECT 1 FROM verses WHERE book = ? AND chapter = ? AND verse = ?",
+        [parsed.book, parsed.chapter, parsed.verse_start],
+    ).fetchone()
+    if not exists:
+        raise HTTPException(404, f"no such verse: {body.verse_ref}")
+    con.execute(
+        """INSERT INTO highlights(verse_ref, book, chapter, verse) VALUES (?,?,?,?)
+           ON CONFLICT(verse_ref) DO NOTHING""",
+        [str(parsed), parsed.book, parsed.chapter, parsed.verse_start],
+    )
+    con.commit()
+    row = con.execute(HIGHLIGHT_SELECT + " WHERE h.verse_ref = ?", [str(parsed)]).fetchone()
+    return highlight_row(row)
+
+
+@app.delete("/api/highlights/{verse_ref}", status_code=204)
+def delete_highlight(verse_ref: str, con: sqlite3.Connection = Depends(get_db)):
+    parsed = refs.parse(verse_ref)
+    if parsed is None:
+        raise HTTPException(400, "bad reference")
+    con.execute("DELETE FROM highlights WHERE verse_ref = ?", [str(parsed)])
+    con.commit()
+
+
+# --------------------------------------------------------------------------
+# study threads
+# --------------------------------------------------------------------------
+#
+# The one new primitive: a named collection of verses, each with an optional
+# short annotation, that a user builds while reading. Notes stay flat and
+# verse-scoped; a thread is what ties several of them together into
+# something worth returning to.
+
+class ThreadIn(BaseModel):
+    name: str
+
+
+class ThreadPatch(BaseModel):
+    name: str
+
+
+class ThreadItemIn(BaseModel):
+    verse_ref: str = Field(..., examples=["JHN.1.5"])
+    note: str | None = None
+
+
+class ThreadItemPatch(BaseModel):
+    note: str
+
+
+def thread_row(con: sqlite3.Connection, r: sqlite3.Row) -> dict:
+    counts = con.execute(
+        """SELECT count(*), count(note) FROM thread_items WHERE thread_id = ?""",
+        [r["id"]],
+    ).fetchone()
+    return {
+        "id": r["id"],
+        "name": r["name"],
+        "created_at": r["created_at"],
+        "updated_at": r["updated_at"],
+        "item_count": counts[0],
+        "note_count": counts[1],
+    }
+
+
+def thread_item_row(r: sqlite3.Row) -> dict:
+    return {
+        "id": r["id"],
+        "thread_id": r["thread_id"],
+        "ref": r["verse_ref"],
+        "book": r["book"],
+        "book_name": r["book_name"],
+        "chapter": r["chapter"],
+        "verse_start": r["verse_start"],
+        "verse_end": r["verse_end"],
+        "label": refs.label(
+            r["book_name"],
+            refs.Ref(r["book"], r["chapter"], r["verse_start"], r["verse_end"]),
+        ),
+        "note": r["note"],
+        "text": r["text"],
+    }
+
+
+THREAD_ITEM_SELECT = """
+    SELECT ti.*, b.name AS book_name,
+           (SELECT v.text FROM verses v
+             WHERE v.translation = ? AND v.book = ti.book AND v.chapter = ti.chapter
+               AND v.verse = CASE WHEN ti.verse_start = 0 THEN 1 ELSE ti.verse_start END)
+             AS text
+    FROM thread_items ti JOIN books b ON b.code = ti.book
+"""
+
+
+@app.get("/api/threads")
+def list_threads(
+    ref: str = Query(""),
+    con: sqlite3.Connection = Depends(get_db),
+):
+    """Every thread, most recently touched first.
+
+    With `ref`, each thread also carries `contains`: whether that verse is
+    already one of its items -- what "Add to thread" needs to show which
+    threads a verse already belongs to.
+    """
+    rows = con.execute(
+        "SELECT * FROM study_threads ORDER BY updated_at DESC, id DESC"
+    ).fetchall()
+    threads = [thread_row(con, r) for r in rows]
+    if ref:
+        parsed = refs.parse(ref)
+        if parsed is None:
+            raise HTTPException(400, "bad reference")
+        member_of = {
+            row[0]
+            for row in con.execute(
+                "SELECT thread_id FROM thread_items WHERE verse_ref = ?", [str(parsed)]
+            )
+        }
+        for t in threads:
+            t["contains"] = t["id"] in member_of
+    return {"threads": threads}
+
+
+@app.post("/api/threads", status_code=201)
+def create_thread(body: ThreadIn, con: sqlite3.Connection = Depends(get_db)):
+    if not body.name.strip():
+        raise HTTPException(400, "thread name is empty")
+    cur = con.execute(
+        "INSERT INTO study_threads(name) VALUES (?)", [body.name.strip()]
+    )
+    con.commit()
+    row = con.execute(
+        "SELECT * FROM study_threads WHERE id = ?", [cur.lastrowid]
+    ).fetchone()
+    return thread_row(con, row)
+
+
+@app.get("/api/threads/{thread_id}")
+def get_thread(
+    thread_id: int,
+    translation: str = Query("KJV"),
+    con: sqlite3.Connection = Depends(get_db),
+):
+    translation = check_translation(con, translation)
+    if translation == "ALL":
+        translation = "KJV"
+    row = con.execute(
+        "SELECT * FROM study_threads WHERE id = ?", [thread_id]
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "thread not found")
+    items = con.execute(
+        THREAD_ITEM_SELECT + " WHERE ti.thread_id = ? ORDER BY ti.seq",
+        [translation, thread_id],
+    ).fetchall()
+    out = thread_row(con, row)
+    out["items"] = [thread_item_row(r) for r in items]
+    return out
+
+
+@app.patch("/api/threads/{thread_id}")
+def rename_thread(
+    thread_id: int, body: ThreadPatch, con: sqlite3.Connection = Depends(get_db)
+):
+    if not body.name.strip():
+        raise HTTPException(400, "thread name is empty")
+    cur = con.execute(
+        "UPDATE study_threads SET name = ?, updated_at = datetime('now') WHERE id = ?",
+        [body.name.strip(), thread_id],
+    )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "thread not found")
+    con.commit()
+    row = con.execute(
+        "SELECT * FROM study_threads WHERE id = ?", [thread_id]
+    ).fetchone()
+    return thread_row(con, row)
+
+
+@app.delete("/api/threads/{thread_id}", status_code=204)
+def delete_thread(thread_id: int, con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("DELETE FROM study_threads WHERE id = ?", [thread_id])
+    if cur.rowcount == 0:
+        raise HTTPException(404, "thread not found")
+    con.commit()
+
+
+@app.post("/api/threads/{thread_id}/items", status_code=201)
+def add_thread_item(
+    thread_id: int, body: ThreadItemIn, con: sqlite3.Connection = Depends(get_db)
+):
+    thread = con.execute(
+        "SELECT 1 FROM study_threads WHERE id = ?", [thread_id]
+    ).fetchone()
+    if thread is None:
+        raise HTTPException(404, "thread not found")
+    parsed = refs.parse(body.verse_ref)
+    if parsed is None or not parsed.verse_start:
+        raise HTTPException(400, "expected a reference like PHP.4.6")
+    exists = con.execute(
+        "SELECT 1 FROM verses WHERE book = ? AND chapter = ? AND verse = ?",
+        [parsed.book, parsed.chapter, parsed.verse_start],
+    ).fetchone()
+    if not exists:
+        raise HTTPException(404, f"no such verse: {body.verse_ref}")
+    dup = con.execute(
+        "SELECT id FROM thread_items WHERE thread_id = ? AND verse_ref = ?",
+        [thread_id, str(parsed)],
+    ).fetchone()
+    if dup is not None:
+        raise HTTPException(409, "verse is already in this thread")
+    seq = (
+        con.execute(
+            "SELECT coalesce(max(seq), 0) + 1 FROM thread_items WHERE thread_id = ?",
+            [thread_id],
+        ).fetchone()[0]
+    )
+    note = body.note.strip() if body.note and body.note.strip() else None
+    cur = con.execute(
+        """INSERT INTO thread_items(thread_id, verse_ref, book, chapter, verse_start,
+                                     verse_end, note, seq)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        [
+            thread_id,
+            str(parsed),
+            parsed.book,
+            parsed.chapter,
+            parsed.verse_start,
+            parsed.verse_end,
+            note,
+            seq,
+        ],
+    )
+    con.commit()
+    row = con.execute(
+        THREAD_ITEM_SELECT + " WHERE ti.id = ?", ["KJV", cur.lastrowid]
+    ).fetchone()
+    return thread_item_row(row)
+
+
+@app.patch("/api/threads/items/{item_id}")
+def update_thread_item(
+    item_id: int, body: ThreadItemPatch, con: sqlite3.Connection = Depends(get_db)
+):
+    note = body.note.strip() or None
+    cur = con.execute(
+        "UPDATE thread_items SET note = ? WHERE id = ?", [note, item_id]
+    )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "thread item not found")
+    con.commit()
+    row = con.execute(
+        THREAD_ITEM_SELECT + " WHERE ti.id = ?", ["KJV", item_id]
+    ).fetchone()
+    return thread_item_row(row)
+
+
+@app.delete("/api/threads/items/{item_id}", status_code=204)
+def delete_thread_item(item_id: int, con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("DELETE FROM thread_items WHERE id = ?", [item_id])
+    if cur.rowcount == 0:
+        raise HTTPException(404, "thread item not found")
+    con.commit()
+
+
+# --------------------------------------------------------------------------
+# today
+# --------------------------------------------------------------------------
+
+# A small, deliberately-picked set -- not a random verse from all 31,102,
+# which would as often land on a genealogy or a building measurement as
+# anything worth opening the app to read.
+VERSE_OF_THE_DAY_POOL = [
+    "JHN.1.1", "JHN.1.5", "JHN.3.16", "JHN.8.12", "JHN.15.5",
+    "PSA.23.1", "PSA.46.1", "PSA.100.5", "PSA.119.105", "PSA.139.14",
+    "PRO.3.5-6", "ISA.40.31", "ISA.41.10", "ISA.43.2",
+    "MAT.5.14", "MAT.6.33", "MAT.11.28",
+    "ROM.8.28", "ROM.12.2", "1CO.13.4-7", "2CO.5.17",
+    "GAL.5.22-23", "EPH.2.8-9", "PHP.4.6-7", "PHP.4.13",
+    "COL.3.23", "1TH.5.16-18", "HEB.11.1", "HEB.12.1",
+    "JAS.1.2-4", "1PE.5.7", "1JN.4.19", "REV.21.4",
+]
+
+
+@app.get("/api/today")
+def today(translation: str = Query("KJV"), con: sqlite3.Connection = Depends(get_db)):
+    """One verse, and the thread most recently worked on.
+
+    The verse is picked deterministically from the day of the year, not at
+    random and not from any server -- the same date always lands on the same
+    verse, offline, which is what makes it safe to prefetch and to show the
+    same thing if the app is opened twice in one day.
+    """
+    translation = check_translation(con, translation)
+    if translation == "ALL":
+        translation = "KJV"
+    day = datetime.date.today().timetuple().tm_yday
+    ref = VERSE_OF_THE_DAY_POOL[day % len(VERSE_OF_THE_DAY_POOL)]
+    parsed = refs.parse(ref)
+    # A pool entry can be a range (PHP.4.6-7): fetch every verse in it and
+    # join the text, so the card's text actually matches the range its own
+    # label names instead of showing just the first verse under a heading
+    # that promises more.
+    rows = con.execute(
+        """SELECT v.id, v.book, v.chapter, v.verse, v.translation, v.text,
+                  b.name AS book_name
+           FROM verses v JOIN books b ON b.code = v.book
+           WHERE v.book = ? AND v.chapter = ? AND v.verse BETWEEN ? AND ?
+             AND v.translation = ?
+           ORDER BY v.verse""",
+        [parsed.book, parsed.chapter, parsed.verse_start, parsed.verse_end, translation],
+    ).fetchall()
+
+    verse = None
+    if rows:
+        verse = verse_row(rows[0])
+        verse["text"] = " ".join(r["text"] for r in rows)
+
+    recent_thread = con.execute(
+        "SELECT * FROM study_threads ORDER BY updated_at DESC, id DESC LIMIT 1"
+    ).fetchone()
+
+    return {
+        "verse_of_day": {
+            "ref": str(parsed),
+            "label": refs.label(rows[0]["book_name"], parsed) if rows else ref,
+            "verse": verse,
+        },
+        "recent_thread": thread_row(con, recent_thread) if recent_thread else None,
     }
 
 

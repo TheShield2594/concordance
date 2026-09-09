@@ -21,6 +21,7 @@ venv: $(PY)
 
 ## download the public-domain sources once, then build the SQLite database
 data: $(PY)
+	$(PY) -m pip install --quiet -r etl/requirements.txt
 	$(PY) etl/fetch_sources.py
 	$(PY) etl/build_db.py
 

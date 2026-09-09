@@ -1,52 +1,225 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api.js'
 import {
-  CallNumber,
+  Badge,
   Chips,
   Empty,
   ErrorNote,
   Marked,
+  Panel,
+  ResultRow,
   SearchField,
   Section,
   Spinner,
   TopicRow,
-  VerseCard,
 } from './components.jsx'
 import { formatDate } from './format.js'
-import { useAsync, useDebounced } from './hooks.js'
+import { useAsync, useDebounced, useStoredJSON } from './hooks.js'
+import {
+  IconBookmark,
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconNote,
+  IconOriginal,
+  IconPlay,
+  IconShare,
+} from './icons.jsx'
 
 const PAGE = 25
+const SEARCH_MODES = [
+  { id: 'meaning', label: 'Meaning' },
+  { id: 'exact', label: 'Exact' },
+  { id: 'strongs', label: "Strong's" },
+]
+
+async function share(text) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ text })
+      return
+    } catch (e) {
+      // Cancelling the share sheet is the one rejection that means "stop
+      // here" -- anything else (no permission, an unshareable payload) is a
+      // real failure the clipboard fallback below should still attempt.
+      if (e.name === 'AbortError') return
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    /* clipboard unavailable -- silently give up rather than throw into the UI */
+  }
+}
+
+/* ------------------------------------------------------------------- today */
+
+export function TodayView({ actions, navigate, readable, threadsVersion }) {
+  const { data, error, loading } = useAsync(
+    () => api.today(readable),
+    [readable, threadsVersion],
+  )
+  const [lastRead] = useStoredJSON('concordance.lastRead', null)
+  const [lastTopic] = useStoredJSON('concordance.lastTopic', null)
+  const today = new Intl.DateTimeFormat(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date())
+
+  const verse = data?.verse_of_day?.verse
+  const openVerse = () =>
+    verse && navigate(`read/${verse.book}/${verse.chapter}?v=${verse.verse}`)
+
+  return (
+    <div className="view">
+      <div className="view-head">
+        <span className="eyebrow">{today}</span>
+        <h1>Today</h1>
+      </div>
+
+      {loading && <Spinner label="Opening" />}
+      <ErrorNote error={error} />
+
+      {verse && (
+        <Panel variant="soft" className="today-hero">
+          <span className="panel__eyebrow">Verse of the day</span>
+          <p className="today-hero__text">{verse.text}</p>
+          <div className="today-hero__foot">
+            <button type="button" className="result__action" onClick={openVerse}>
+              {data.verse_of_day.label} · {verse.translation}
+            </button>
+            <div className="today-hero__actions">
+              <button
+                type="button"
+                className="icon-btn"
+                title="Add a note"
+                onClick={() => actions.note(verse.ref, verse.translation)}
+              >
+                <IconBookmark size={19} />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                title="Share"
+                onClick={() => share(`${verse.text} — ${data.verse_of_day.label}`)}
+              >
+                <IconShare size={19} />
+              </button>
+            </div>
+          </div>
+        </Panel>
+      )}
+
+      <section className="section">
+        <div className="section__head">
+          <span className="section__title">Continue reading</span>
+        </div>
+        {lastRead ? (
+          <Panel className="stack stack--tight">
+            <div className="today-hero__foot">
+              <div>
+                <p className="panel__title" style={{ fontSize: '1.2rem' }}>
+                  {lastRead.label}
+                </p>
+                <span className="tag">{lastRead.book_name}</span>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                title="Resume reading"
+                onClick={() => navigate(`read/${lastRead.book}/${lastRead.chapter}`)}
+                style={{
+                  width: '2.75rem',
+                  height: '2.75rem',
+                  borderRadius: '50%',
+                  background: 'var(--primary)',
+                  color: 'var(--primary-foreground)',
+                }}
+              >
+                <IconPlay size={16} />
+              </button>
+            </div>
+          </Panel>
+        ) : (
+          <Panel className="muted">Nothing read yet — try John 1 or Psalm 23.</Panel>
+        )}
+      </section>
+
+      {(data?.recent_thread || lastTopic) && (
+        <section className="section">
+          <div className="section__head">
+            <span className="section__title">Picking up where you left off</span>
+          </div>
+          <div className="today-row">
+            {data?.recent_thread && (
+              <Panel
+                variant="dark"
+                as="button"
+                className="today-card"
+                onClick={() => navigate(`notes/threads/${data.recent_thread.id}`)}
+              >
+                <span className="panel__eyebrow">Study thread</span>
+                <p className="today-card__title">{data.recent_thread.name}</p>
+                <span className="today-card__foot">
+                  {data.recent_thread.item_count} {data.recent_thread.item_count === 1 ? 'verse' : 'verses'} ·{' '}
+                  {data.recent_thread.note_count} {data.recent_thread.note_count === 1 ? 'note' : 'notes'}
+                </span>
+              </Panel>
+            )}
+            {lastTopic && (
+              <Panel
+                variant="soft"
+                as="button"
+                className="today-card"
+                onClick={() => navigate(`topics/${lastTopic.id}`)}
+              >
+                <span className="panel__eyebrow">Topic</span>
+                <p className="today-card__title">{lastTopic.name}</p>
+                <span className="today-card__foot">Nave's</span>
+              </Panel>
+            )}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
 
 /* ------------------------------------------------------------------ search */
 
 export function SearchView({ route, navigate, translation, setTranslation, chips, actions }) {
   const [q, setQ] = useState(route.query.q ?? '')
   const query = useDebounced(q, 200)
+  const [mode, setMode] = useState('meaning')
   const [extra, setExtra] = useState([])
   const [loadingMore, setLoadingMore] = useState(false)
   const [moreError, setMoreError] = useState(null)
-  // Best match first, or straight through Genesis to Revelation.
   const [sort, setSort] = useState('relevance')
 
-  // Keep the URL in step so a reload, or a trip through another tab, returns
-  // to the same search. Goes through navigate so the route state stays true.
   useEffect(() => {
-    navigate(query ? `search?q=${encodeURIComponent(query)}` : 'search', {
-      replace: true,
-    })
+    navigate(query ? `search?q=${encodeURIComponent(query)}` : 'search', { replace: true })
   }, [query, navigate])
 
   const { data, error, loading } = useAsync(
-    () => api.search({ q: query, translation, limit: PAGE, sort }),
-    [query, translation, sort],
+    () => api.search({ q: query, translation, limit: PAGE, sort, mode }),
+    [query, translation, sort, mode],
     { skip: !query.trim() },
   )
 
-  useEffect(() => setExtra([]), [query, translation, sort])
+  useEffect(() => setExtra([]), [query, translation, sort, mode])
 
   const verses = useMemo(() => [...(data?.verses ?? []), ...extra], [data, extra])
-  const more = data ? verses.length < data.verse_total : false
+  // verse_total is the true FTS count and the paging cursor "Load more" has
+  // to respect; meaning-only extras ride along on page 1 but aren't part of
+  // that count, so they're excluded from the offset math too, or the next
+  // fetch would skip past real FTS results the extras' count stood in for.
+  const ftsLoaded = useMemo(
+    () => verses.filter((v) => v.match_kind !== 'meaning').length,
+    [verses],
+  )
+  const more = data ? ftsLoaded < data.verse_total : false
 
   const loadMore = async () => {
     setLoadingMore(true)
@@ -56,9 +229,10 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         q: query,
         translation,
         limit: PAGE,
-        offset: verses.length,
+        offset: ftsLoaded,
         include: 'verses',
         sort,
+        mode,
       })
       setExtra((rows) => [...rows, ...next.verses])
     } catch (e) {
@@ -70,18 +244,31 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
 
   return (
     <div className="view">
+      <div className="view-head">
+        <h1>Search</h1>
+      </div>
+
       <SearchField
         value={q}
         onChange={setQ}
         placeholder="Search scripture, topics and notes"
         autoFocus
       />
-      <Chips
-        options={chips}
-        value={translation}
-        onChange={setTranslation}
-        label="Translation"
-      />
+
+      <div className="chips">
+        {SEARCH_MODES.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className="chip"
+            aria-pressed={mode === m.id}
+            onClick={() => setMode(m.id)}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <Chips options={chips} value={translation} onChange={setTranslation} label="Translation" />
 
       {!query.trim() && (
         <Empty mark="Concordance">
@@ -89,10 +276,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
             Search the text of four translations, the topics of Nave's, and your own
             notes — all at once.
           </p>
-          <p>
-            A reference — John 3:16, PHP.4.6 — or a Strong's number jumps straight
-            to it.
-          </p>
+          <p>A reference — John 3:16, PHP.4.6 — or a Strong's number jumps straight to it.</p>
         </Empty>
       )}
 
@@ -100,34 +284,55 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
       <ErrorNote error={error} />
 
       {data?.reference && (
-        <ReferenceCard
-          reference={data.reference}
-          navigate={navigate}
-          actions={actions}
-        />
+        <ReferenceCard reference={data.reference} navigate={navigate} actions={actions} />
       )}
 
-      {data?.strongs && (
+      {mode === 'strongs' && data?.strongs_matches?.length > 0 && (
+        <Section title="Original language" aside={`${data.strongs_matches.length} matching`}>
+          <div className="results">
+            {data.strongs_matches.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                className="result"
+                style={{ textAlign: 'left', background: 'none', border: 0, width: '100%' }}
+                onClick={() => actions.strongs(entry.id)}
+              >
+                <div className="result__head">
+                  <span className="result__ref">{entry.lemma}</span>
+                  <Badge>{entry.id}</Badge>
+                </div>
+                <p className="result__text" style={{ fontSize: '1rem' }}>
+                  {entry.translit} · {entry.occurrences.toLocaleString()}× — {entry.definition}
+                </p>
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {mode !== 'strongs' && data?.strongs && (
         <Section title="Original language" aside={data.strongs.language}>
           <button
             type="button"
-            className="card card--strongs"
+            className="panel"
+            style={{ textAlign: 'left', width: '100%', display: 'block', cursor: 'pointer' }}
             onClick={() => actions.strongs(data.strongs.id)}
           >
-            <span className="card__head">
-              <span className="callno">{data.strongs.id}</span>
+            <div className="result__head">
+              <Badge>{data.strongs.id}</Badge>
               <span className="tag">{data.strongs.translit}</span>
               <span className="tag" style={{ marginLeft: 'auto' }}>
                 {data.strongs.occurrences.toLocaleString()}×
               </span>
-            </span>
-            <span className={`lemma lemma--${data.strongs.lang}`} dir={data.strongs.direction}>
+            </div>
+            <p className={`lemma lemma--${data.strongs.lang}`} dir={data.strongs.direction}>
               {data.strongs.lemma}
-            </span>
-            <span className="card__text">{data.strongs.definition}</span>
-            <span className="card__actions">
-              <span className="action">Every occurrence →</span>
-            </span>
+            </p>
+            <p className="result__text" style={{ fontSize: '1rem' }}>{data.strongs.definition}</p>
+            <div className="result__actions">
+              <span className="result__action">Every occurrence →</span>
+            </div>
           </button>
         </Section>
       )}
@@ -136,11 +341,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         <Section title="Topics" aside={`${data.topics.length} matching`}>
           <div className="stack">
             {data.topics.map((topic) => (
-              <TopicRow
-                key={topic.id}
-                topic={topic}
-                onOpen={(t) => navigate(`topics/${t.id}`)}
-              />
+              <TopicRow key={topic.id} topic={topic} onOpen={(t) => navigate(`topics/${t.id}`)} />
             ))}
           </div>
         </Section>
@@ -148,14 +349,19 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
 
       {data?.notes?.length > 0 && (
         <Section title="Your notes" aside={`${data.notes.length}`}>
-          <div className="stack">
+          <div className="results">
             {data.notes.map((note) => (
-              <article key={note.id} className="card card--verdigris">
-                <div className="card__head">
-                  <CallNumber onClick={() => actions.note(note.verse_ref)}>
+              <article key={note.id} className="result">
+                <div className="result__head">
+                  <button
+                    type="button"
+                    className="result__ref"
+                    style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+                    onClick={() => actions.note(note.verse_ref)}
+                  >
                     {note.verse_ref}
-                  </CallNumber>
-                  <span className="tag">Note</span>
+                  </button>
+                  <span className="result__kind">Note</span>
                 </div>
                 <p className="note-body">
                   <Marked segments={note.segments} text={note.body} />
@@ -166,96 +372,84 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         </Section>
       )}
 
-      {data && !(data.verse_total === 0 && (data.strongs || data.reference)) && (
-        <Section
-          title="Verses"
-          aside={
-            data.verse_total ? (
-              <>
-                {data.verse_total.toLocaleString()} in{' '}
-                {translation === 'ALL' ? 'all translations' : translation} ·{' '}
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() =>
-                    setSort(sort === 'relevance' ? 'canonical' : 'relevance')
-                  }
-                  title="Switch between best-match and Genesis-to-Revelation order"
-                >
-                  {sort === 'relevance' ? 'By relevance' : 'In order'}
-                </button>
-              </>
-            ) : undefined
-          }
-        >
-          {/* A Strong's number or a verse reference never appears in the
-              English text, so its search finds no verses by design. Saying
-              "nothing matched" over a card that plainly matched something
-              reads as a failure. */}
-          {data.verse_total === 0 && !loading && !data.strongs && !data.reference ? (
-            <Empty mark="No verses">
-              <p>Nothing matched “{query}”.</p>
-            </Empty>
-          ) : (
-            <div className="stack">
-              {verses.map((verse) => (
-                <VerseCard
-                  key={`${verse.translation}-${verse.id}`}
-                  verse={verse}
-                  onRead={(v) => navigate(`read/${v.book}/${v.chapter}?v=${v.verse}`)}
-                  onNote={(v) => actions.note(v.ref, v.translation)}
-                  onCrossRefs={(v) => actions.crossRefs(v.ref)}
-                  onOriginal={(v) => actions.original(v.ref)}
-                />
-              ))}
-              <ErrorNote error={moreError} />
-              {more && (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? 'Loading…' : 'Load more'}
-                </button>
-              )}
-            </div>
-          )}
-        </Section>
-      )}
+      {mode !== 'strongs' &&
+        data &&
+        !(data.verse_total === 0 && (data.strongs || data.reference)) && (
+          <Section
+            title="Verses"
+            aside={
+              data.verse_total ? (
+                <>
+                  {data.verse_total.toLocaleString()} in{' '}
+                  {translation === 'ALL' ? 'all translations' : translation} ·{' '}
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => setSort(sort === 'relevance' ? 'canonical' : 'relevance')}
+                    title="Switch between best-match and Genesis-to-Revelation order"
+                  >
+                    {sort === 'relevance' ? 'By relevance' : 'In order'}
+                  </button>
+                </>
+              ) : undefined
+            }
+          >
+            {data.verse_total === 0 && !loading && !data.strongs && !data.reference ? (
+              <Empty mark="No verses">
+                <p>Nothing matched “{query}”.</p>
+              </Empty>
+            ) : (
+              <div className="results">
+                {verses.map((verse) => (
+                  <ResultRow
+                    key={`${verse.translation}-${verse.id}`}
+                    verse={verse}
+                    onRead={(v) => navigate(`read/${v.book}/${v.chapter}?v=${v.verse}`)}
+                    onNote={(v) => actions.note(v.ref, v.translation)}
+                    onCrossRefs={(v) => actions.crossRefs(v.ref)}
+                    onOriginal={(v) => actions.original(v.ref)}
+                  />
+                ))}
+                <ErrorNote error={moreError} />
+                {more && (
+                  <button type="button" className="btn" onClick={loadMore} disabled={loadingMore}>
+                    {loadingMore ? 'Loading…' : 'Load more'}
+                  </button>
+                )}
+              </div>
+            )}
+          </Section>
+        )}
     </div>
   )
 }
 
-/**
- * The verse a reference-shaped search names, set above the text hits the way
- * a Strong's entry is. A whole-chapter reference is a doorway with no text;
- * a verse or range brings its text along, one line per translation on file.
- */
 function ReferenceCard({ reference, navigate, actions }) {
   const single = reference.verse_start > 0
   const range = reference.verse_end > reference.verse_start
   const firstRef = `${reference.book}.${reference.chapter}.${reference.verse_start}`
   const read = () =>
     navigate(
-      `read/${reference.book}/${reference.chapter}${
-        single ? `?v=${reference.verse_start}` : ''
-      }`,
+      `read/${reference.book}/${reference.chapter}${single ? `?v=${reference.verse_start}` : ''}`,
     )
 
   return (
     <Section title="Reference" aside={reference.book_name}>
-      <article className="card">
-        <div className="card__head">
-          <CallNumber onClick={read} title={`Read ${reference.label}`}>
-            {reference.ref}
-          </CallNumber>
-          <span className="tag">{reference.label}</span>
+      <Panel>
+        <div className="result__head">
+          <button
+            type="button"
+            className="result__ref"
+            style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+            onClick={read}
+          >
+            {reference.label}
+          </button>
         </div>
         {reference.verses.length > 0 && (
           <div className="stack">
             {reference.verses.map((verse) => (
-              <p key={`${verse.translation}-${verse.id}`} className="card__text">
+              <p key={`${verse.translation}-${verse.id}`} className="result__text">
                 {verse.text}{' '}
                 <span className="tag">
                   {range ? `v${verse.verse} · ` : ''}
@@ -265,29 +459,25 @@ function ReferenceCard({ reference, navigate, actions }) {
             ))}
           </div>
         )}
-        <div className="card__actions">
-          <button type="button" className="action" onClick={read}>
+        <div className="result__actions">
+          <button type="button" className="result__action" onClick={read}>
             Read chapter
           </button>
           {single && (
             <>
-              <button
-                type="button"
-                className="action action--verdigris"
-                onClick={() => actions.note(firstRef)}
-              >
+              <button type="button" className="result__action" onClick={() => actions.note(firstRef)}>
                 Add note
               </button>
               <button
                 type="button"
-                className="action action--verdigris"
+                className="result__action"
                 onClick={() => actions.crossRefs(firstRef)}
               >
                 Cross-refs
               </button>
               <button
                 type="button"
-                className="action"
+                className="result__action"
                 onClick={() => actions.original(firstRef)}
               >
                 Original
@@ -295,7 +485,7 @@ function ReferenceCard({ reference, navigate, actions }) {
             </>
           )}
         </div>
-      </article>
+      </Panel>
     </Section>
   )
 }
@@ -305,14 +495,7 @@ function ReferenceCard({ reference, navigate, actions }) {
 export function TopicsView({ route, navigate, readable, actions }) {
   const topicId = route.parts[0]
   if (topicId) {
-    return (
-      <TopicDetail
-        topicId={topicId}
-        navigate={navigate}
-        readable={readable}
-        actions={actions}
-      />
-    )
+    return <TopicDetail topicId={topicId} navigate={navigate} readable={readable} actions={actions} />
   }
   return <TopicList navigate={navigate} />
 }
@@ -324,20 +507,19 @@ function TopicList({ navigate }) {
 
   return (
     <div className="view">
+      <div className="view-head">
+        <h1>Topics</h1>
+      </div>
       <SearchField value={q} onChange={setQ} placeholder="Search Nave's topics" />
       {loading && <Spinner label="Looking up" />}
       <ErrorNote error={error} />
       <Section
-        title={query ? 'Matching topics' : 'Largest topics'}
+        title={query ? 'Matching topics' : "Nave's largest topics"}
         aside={data ? `${data.topics.length}` : undefined}
       >
         <div className="stack">
           {data?.topics?.map((topic) => (
-            <TopicRow
-              key={topic.id}
-              topic={topic}
-              onOpen={(t) => navigate(`topics/${t.id}`)}
-            />
+            <TopicRow key={topic.id} topic={topic} onOpen={(t) => navigate(`topics/${t.id}`)} />
           ))}
         </div>
         {data?.topics?.length === 0 && (
@@ -351,27 +533,24 @@ function TopicList({ navigate }) {
 }
 
 function TopicDetail({ topicId, navigate, readable, actions }) {
-  const { data, error, loading } = useAsync(
-    () => api.topic(topicId, readable),
-    [topicId, readable],
-  )
+  const { data, error, loading } = useAsync(() => api.topic(topicId, readable), [topicId, readable])
+  const [, setLastTopic] = useStoredJSON('concordance.lastTopic', null)
 
-  // A reference that names a verse takes the reader to it; a whole-chapter
-  // reference just opens the chapter.
+  useEffect(() => {
+    if (data) setLastTopic({ id: data.id, name: data.name })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.id])
+
   const readTarget = (ref) =>
-    `read/${ref.book}/${ref.chapter}${
-      ref.verse_start > 0 ? `?v=${ref.verse_start}` : ''
-    }`
+    `read/${ref.book}/${ref.chapter}${ref.verse_start > 0 ? `?v=${ref.verse_start}` : ''}`
 
   return (
     <div className="view">
       <div className="section__head">
-        <button type="button" className="link" onClick={() => navigate('topics')}>
-          ← All topics
+        <button type="button" className="link" onClick={() => navigate('search')}>
+          ← Search
         </button>
-        <span className="tag tag--onink">
-          {data ? `${data.ref_count} refs · ${data.translation}` : ''}
-        </span>
+        <span className="tag">{data ? `${data.ref_count} refs · ${data.translation}` : ''}</span>
       </div>
 
       {loading && <Spinner label="Opening" />}
@@ -379,23 +558,29 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
 
       {data && (
         <>
-          <h2 style={{ fontFamily: 'var(--display)', margin: 0 }}>{data.name}</h2>
+          <h1 className="serif" style={{ fontWeight: 400, margin: 0, fontSize: '1.8rem' }}>
+            {data.name}
+          </h1>
           {data.groups.map((group, i) => (
             <Section key={i} title={group.heading || 'References'}>
-              <div className="stack">
+              <div className="results">
                 {group.refs.map((ref, j) => (
-                  <article key={`${ref.ref}-${j}`} className="card">
-                    <div className="card__head">
-                      <CallNumber onClick={() => navigate(readTarget(ref))}>
-                        {ref.ref}
-                      </CallNumber>
-                      <span className="tag">{ref.label}</span>
-                    </div>
-                    {ref.text && <p className="card__text">{ref.text}</p>}
-                    <div className="card__actions">
+                  <article key={`${ref.ref}-${j}`} className="result">
+                    <div className="result__head">
                       <button
                         type="button"
-                        className="action"
+                        className="result__ref"
+                        style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+                        onClick={() => navigate(readTarget(ref))}
+                      >
+                        {ref.label}
+                      </button>
+                    </div>
+                    {ref.text && <p className="result__text">{ref.text}</p>}
+                    <div className="result__actions">
+                      <button
+                        type="button"
+                        className="result__action"
                         onClick={() => navigate(readTarget(ref))}
                       >
                         Read chapter
@@ -403,12 +588,9 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
                       {ref.verse_start > 0 && (
                         <button
                           type="button"
-                          className="action action--verdigris"
+                          className="result__action"
                           onClick={() =>
-                            actions.note(
-                              `${ref.book}.${ref.chapter}.${ref.verse_start}`,
-                              data.translation,
-                            )
+                            actions.note(`${ref.book}.${ref.chapter}.${ref.verse_start}`, data.translation)
                           }
                         >
                           Add note
@@ -428,13 +610,24 @@ function TopicDetail({ topicId, navigate, readable, actions }) {
 
 /* -------------------------------------------------------------------- read */
 
-export function ReadView({ route, navigate, readable, chooseReading, meta, actions, notesVersion }) {
+export function ReadView({
+  route,
+  navigate,
+  readable,
+  chooseReading,
+  meta,
+  actions,
+  notesVersion,
+  highlightsVersion,
+  desktop,
+  focusedRef,
+  onFocusVerse,
+}) {
   const [book, chapter] = route.parts
   const chips = (meta?.translation_chips ?? []).filter((t) => t !== 'ALL')
 
   if (!book) return <BookPicker meta={meta} navigate={navigate} />
-  if (!chapter)
-    return <ChapterPicker meta={meta} book={book} navigate={navigate} />
+  if (!chapter) return <ChapterPicker meta={meta} book={book} navigate={navigate} />
 
   return (
     <Chapter
@@ -447,6 +640,10 @@ export function ReadView({ route, navigate, readable, chooseReading, meta, actio
       navigate={navigate}
       actions={actions}
       notesVersion={notesVersion}
+      highlightsVersion={highlightsVersion}
+      desktop={desktop}
+      focusedRef={focusedRef}
+      onFocusVerse={onFocusVerse}
     />
   )
 }
@@ -455,21 +652,16 @@ function BookPicker({ meta, navigate }) {
   const books = meta?.books ?? []
   return (
     <div className="view">
+      <div className="view-head">
+        <h1>Read</h1>
+      </div>
       {['OT', 'NT'].map((testament) => (
-        <Section
-          key={testament}
-          title={testament === 'OT' ? 'Old Testament' : 'New Testament'}
-        >
+        <Section key={testament} title={testament === 'OT' ? 'Old Testament' : 'New Testament'}>
           <div className="grid grid--books">
             {books
               .filter((b) => b.testament === testament)
               .map((b) => (
-                <button
-                  key={b.code}
-                  type="button"
-                  className="tile"
-                  onClick={() => navigate(`read/${b.code}`)}
-                >
+                <button key={b.code} type="button" className="tile" onClick={() => navigate(`read/${b.code}`)}>
                   {b.code}
                   <span className="tile__name">{b.name}</span>
                 </button>
@@ -490,17 +682,11 @@ function ChapterPicker({ meta, book, navigate }) {
         <button type="button" className="link" onClick={() => navigate('read')}>
           ← Books
         </button>
-        <CallNumber onInk>{book.toUpperCase()}</CallNumber>
       </div>
       <Section title={info ? info.name : book} aside={`${count} chapters`}>
         <div className="grid grid--chapters">
           {Array.from({ length: count }, (_, i) => i + 1).map((n) => (
-            <button
-              key={n}
-              type="button"
-              className="tile"
-              onClick={() => navigate(`read/${book.toUpperCase()}/${n}`)}
-            >
+            <button key={n} type="button" className="tile" onClick={() => navigate(`read/${book.toUpperCase()}/${n}`)}>
               {n}
             </button>
           ))}
@@ -510,7 +696,31 @@ function ChapterPicker({ meta, book, navigate }) {
   )
 }
 
-function Chapter({
+/** Which verse (by `data-ref`) a non-collapsed selection currently sits in. */
+function useVerseSelection(containerRef) {
+  const [ref, setRef] = useState(null)
+  useEffect(() => {
+    const onChange = () => {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed || !containerRef.current) {
+        setRef(null)
+        return
+      }
+      const node = sel.anchorNode
+      if (!node || !containerRef.current.contains(node)) {
+        setRef(null)
+        return
+      }
+      const el = (node.nodeType === 1 ? node : node.parentElement)?.closest('[data-ref]')
+      setRef(el?.dataset.ref ?? null)
+    }
+    document.addEventListener('selectionchange', onChange)
+    return () => document.removeEventListener('selectionchange', onChange)
+  }, [containerRef])
+  return [ref, () => window.getSelection()?.removeAllRanges()]
+}
+
+export function Chapter({
   book,
   chapter,
   focus,
@@ -520,46 +730,63 @@ function Chapter({
   navigate,
   actions,
   notesVersion,
+  highlightsVersion,
+  desktop,
+  focusedRef,
+  onFocusVerse,
 }) {
   const { data, error, loading } = useAsync(
     () => api.chapter(book, chapter, translation),
-    [book, chapter, translation, notesVersion],
+    [book, chapter, translation, notesVersion, highlightsVersion],
   )
+  const containerRef = useRef(null)
+  const [selectionRef, clearSelection] = useVerseSelection(containerRef)
+  const selectedRef = desktop ? null : selectionRef
+  const [, setLastRead] = useStoredJSON('concordance.lastRead', null)
 
   useEffect(() => {
     window.scrollTo({ top: 0 })
   }, [book, chapter])
 
-  // A link that named a verse carries the reader down to it once the chapter
-  // arrives; the wash that marks it is the --focus class on the verse itself.
   useEffect(() => {
-    if (!data || !focus) return
-    document
-      .getElementById(`verse-${focus}`)
-      ?.scrollIntoView({ block: 'center' })
+    if (!data) return
+    document.getElementById(`verse-${focus}`)?.scrollIntoView({ block: 'center' })
   }, [data, focus])
 
-  return (
-    <div className="view">
-      <div className="section__head">
-        <button
-          type="button"
-          className="link"
-          onClick={() => navigate(`read/${book.toUpperCase()}`)}
-        >
-          ← Chapters
-        </button>
-        <CallNumber onInk large>
-          {book.toUpperCase()}.{chapter}
-        </CallNumber>
-      </div>
+  useEffect(() => {
+    if (!data) return
+    setLastRead({ book: data.book, book_name: data.book_name, chapter: data.chapter, label: data.label })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.book, data?.chapter])
 
-      <Chips
-        options={chips}
-        value={translation}
-        onChange={setTranslation}
-        label="Translation"
-      />
+  const selectedVerse = data?.verses.find((v) => v.ref === selectedRef)
+
+  const withSelection = (fn) => () => {
+    fn()
+    clearSelection()
+  }
+
+  return (
+    <div className={desktop ? 'desktop__reader-inner' : 'view'}>
+      {!desktop && (
+        <div className="section__head">
+          <button type="button" className="link" onClick={() => navigate(`read/${book.toUpperCase()}`)}>
+            ← Chapters
+          </button>
+          <button
+            type="button"
+            className="link"
+            onClick={() => navigate(`read/${book.toUpperCase()}`)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+          >
+            {data?.label} <IconChevronDown size={13} />
+          </button>
+        </div>
+      )}
+
+      {!desktop && (
+        <Chips options={chips} value={translation} onChange={setTranslation} label="Translation" />
+      )}
 
       {loading && <Spinner label="Opening" />}
       <ErrorNote error={error} />
@@ -567,93 +794,108 @@ function Chapter({
       {data && (
         <>
           <div className="reader">
-            <h2>{data.label}</h2>
-            <div className="tag" style={{ marginBottom: '0.9rem' }}>
-              {data.translation} · {data.verses.length} verses
-            </div>
-            {/* Two gestures per verse: the number opens the original, the
-                text opens notes. The paragraph itself is no longer the
-                control, so neither one sits inside the other. */}
-            {data.verses.map((verse) => (
-              <p
-                key={verse.verse}
-                id={`verse-${verse.verse}`}
-                className={
-                  verse.verse === focus
-                    ? 'reader__verse reader__verse--focus'
-                    : 'reader__verse'
-                }
-              >
-                <button
-                  type="button"
-                  className="reader__num"
-                  onClick={() => actions.original(verse.ref)}
-                  title="The Hebrew, Aramaic or Greek behind this verse"
-                >
-                  {verse.verse}
-                </button>
-                <span
-                  className="reader__body"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => actions.note(verse.ref, data.translation)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      actions.note(verse.ref, data.translation)
+            {desktop && (
+              <div className="reader__meta">
+                <span className="reader__book">{data.book_name}</span>
+                <h2 className="reader__chapter">Chapter {data.chapter}</h2>
+              </div>
+            )}
+            <div
+              className="reader__text"
+              ref={containerRef}
+              onClick={
+                desktop
+                  ? (e) => {
+                      const el = e.target.closest('[data-ref]')
+                      if (el) onFocusVerse?.(el.dataset.ref)
                     }
-                  }}
-                  title="Add or read notes on this verse"
+                  : undefined
+              }
+            >
+              {data.verses.map((verse) => (
+                <span
+                  key={verse.verse}
+                  id={`verse-${verse.verse}`}
+                  data-ref={verse.ref}
+                  className={[
+                    'reader__verse',
+                    verse.verse === focus && 'reader__verse--focus',
+                    verse.highlighted && 'reader__verse--highlighted',
+                    desktop && verse.ref === focusedRef && 'reader__verse--selected',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  style={desktop ? { cursor: 'pointer' } : undefined}
                 >
+                  <sup className="reader__num">{verse.verse}</sup>
                   {verse.text}
                   {verse.note_count > 0 && (
-                    <span
-                      className="reader__note-dot"
-                      title={`${verse.note_count} note(s)`}
-                    />
+                    <span className="reader__note-dot" title={`${verse.note_count} note(s)`} />
                   )}
+                  {' '}
                 </span>
-              </p>
-            ))}
+              ))}
+            </div>
           </div>
 
           <div className="pager">
             <button
               type="button"
-              className="btn"
+              className="pager__btn"
               disabled={!data.prev}
-              onClick={() =>
-                data.prev && navigate(`read/${data.prev.book}/${data.prev.chapter}`)
-              }
+              onClick={() => data.prev && navigate(`read/${data.prev.book}/${data.prev.chapter}`)}
             >
-              ←{' '}
-              {data.prev ? (
-                <CallNumber onInk>
-                  {data.prev.book}.{data.prev.chapter}
-                </CallNumber>
-              ) : (
-                'Start'
-              )}
+              <IconChevronLeft size={16} /> {data.prev ? `${data.prev.book} ${data.prev.chapter}` : 'Start'}
             </button>
             <button
               type="button"
-              className="btn"
+              className="pager__btn"
               disabled={!data.next}
-              onClick={() =>
-                data.next && navigate(`read/${data.next.book}/${data.next.chapter}`)
-              }
+              onClick={() => data.next && navigate(`read/${data.next.book}/${data.next.chapter}`)}
             >
-              {data.next ? (
-                <CallNumber onInk>
-                  {data.next.book}.{data.next.chapter}
-                </CallNumber>
-              ) : (
-                'End'
-              )}{' '}
-              →
+              {data.next ? `${data.next.book} ${data.next.chapter}` : 'End'} <IconChevronRight size={16} />
             </button>
           </div>
         </>
+      )}
+
+      {selectedVerse && (
+        <div className="selection-bar" role="toolbar" aria-label="Selection">
+          <button
+            type="button"
+            className="selection-bar__btn"
+            onClick={withSelection(() =>
+              actions.toggleHighlight(selectedVerse.ref, selectedVerse.highlighted),
+            )}
+          >
+            <span className="selection-bar__dot" />
+            <span>Highlight</span>
+          </button>
+          <button
+            type="button"
+            className="selection-bar__btn"
+            onClick={withSelection(() => actions.note(selectedVerse.ref, data.translation))}
+          >
+            <IconNote size={19} />
+            <span>Note</span>
+          </button>
+          <button
+            type="button"
+            className="selection-bar__btn"
+            onClick={withSelection(() => actions.original(selectedVerse.ref))}
+          >
+            <IconOriginal size={19} />
+            <span>Original</span>
+          </button>
+          <button
+            type="button"
+            className="selection-bar__btn"
+            onClick={withSelection(() => share(`${selectedVerse.text} — ${data.label} v${selectedVerse.verse}`))}
+          >
+            <IconShare size={19} />
+            <span>Share</span>
+          </button>
+        </div>
       )}
     </div>
   )
@@ -661,17 +903,200 @@ function Chapter({
 
 /* ------------------------------------------------------------------- notes */
 
-export function NotesView({ navigate, actions, notesVersion }) {
-  const [q, setQ] = useState('')
-  const query = useDebounced(q, 200)
-  const { data, error, loading } = useAsync(
-    () => api.notes({ q: query }),
-    [query, notesVersion],
-  )
-  const notes = data?.notes ?? []
+export function NotesView({ route, navigate, actions, notesVersion, highlightsVersion, threadsVersion }) {
+  const threadId = route.parts[0] === 'threads' ? route.parts[1] : null
+  const [filter, setFilter] = useState('threads')
+  const [createError, setCreateError] = useState(null)
+
+  if (threadId) {
+    return <ThreadDetail threadId={threadId} navigate={navigate} actions={actions} threadsVersion={threadsVersion} />
+  }
+
+  const newThread = async () => {
+    const name = window.prompt('Name this thread')
+    if (!name?.trim()) return
+    setCreateError(null)
+    try {
+      const thread = await api.createThread(name.trim())
+      navigate(`notes/threads/${thread.id}`)
+    } catch (e) {
+      setCreateError(e)
+    }
+  }
 
   return (
     <div className="view">
+      <div className="section__head" style={{ marginBottom: 0 }}>
+        <h1 className="serif" style={{ fontWeight: 400, fontSize: '2.1rem', margin: 0 }}>
+          Notes
+        </h1>
+        <button
+          type="button"
+          className="icon-btn"
+          title="New thread"
+          onClick={newThread}
+          style={{
+            width: '2.1rem',
+            height: '2.1rem',
+            borderRadius: '50%',
+            background: 'var(--primary)',
+            color: 'var(--primary-foreground)',
+          }}
+        >
+          +
+        </button>
+      </div>
+
+      <ErrorNote error={createError} />
+
+      <div className="chips">
+        {[
+          ['threads', 'Threads'],
+          ['notes', 'All notes'],
+          ['highlights', 'Highlights'],
+        ].map(([id, label]) => (
+          <button key={id} type="button" className="chip" aria-pressed={filter === id} onClick={() => setFilter(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {filter === 'threads' && <ThreadList navigate={navigate} threadsVersion={threadsVersion} />}
+      {filter === 'notes' && <NoteList actions={actions} notesVersion={notesVersion} navigate={navigate} />}
+      {filter === 'highlights' && (
+        <HighlightList actions={actions} highlightsVersion={highlightsVersion} navigate={navigate} />
+      )}
+    </div>
+  )
+}
+
+function ThreadList({ navigate, threadsVersion }) {
+  const { data, error, loading } = useAsync(() => api.threads(), [threadsVersion])
+  const threads = data?.threads ?? []
+
+  return (
+    <>
+      {loading && <Spinner label="Reading" />}
+      <ErrorNote error={error} />
+      {!loading && threads.length === 0 && (
+        <Empty mark="No threads yet">
+          <p>A thread ties several verses, words and notes together while you study.</p>
+        </Empty>
+      )}
+      <div className="stack">
+        {threads.map((thread) => (
+          <Panel
+            key={thread.id}
+            variant="dark"
+            as="button"
+            className="thread-card"
+            onClick={() => navigate(`notes/threads/${thread.id}`)}
+          >
+            <div className="panel__head" style={{ marginBottom: 0 }}>
+              <p className="panel__title">{thread.name}</p>
+              <span className="tag" style={{ color: 'var(--dark-primary)', flex: 'none' }}>
+                {thread.item_count} {thread.item_count === 1 ? 'REF' : 'REFS'}
+              </span>
+            </div>
+            <span className="today-card__foot">
+              {thread.note_count} {thread.note_count === 1 ? 'note' : 'notes'} · updated{' '}
+              {formatDate(thread.updated_at)}
+            </span>
+          </Panel>
+        ))}
+      </div>
+    </>
+  )
+}
+
+function ThreadDetail({ threadId, navigate, actions, threadsVersion }) {
+  const { data, error, loading, reload } = useAsync(() => api.thread(threadId), [threadId, threadsVersion])
+
+  const removeItem = async (itemId) => {
+    await api.removeThreadItem(itemId)
+    reload()
+  }
+
+  const remove = async () => {
+    if (!window.confirm(`Delete "${data.name}"? Its notes on each verse are kept.`)) return
+    await api.deleteThread(threadId)
+    navigate('notes')
+  }
+
+  return (
+    <div className="view">
+      <div className="section__head">
+        <button type="button" className="link" onClick={() => navigate('notes')}>
+          ← Threads
+        </button>
+        {data && (
+          <button type="button" className="link" onClick={remove} style={{ color: 'var(--destructive)' }}>
+            Delete
+          </button>
+        )}
+      </div>
+
+      {loading && <Spinner label="Opening" />}
+      <ErrorNote error={error} />
+
+      {data && (
+        <>
+          <h1 className="serif" style={{ fontWeight: 400, fontSize: '1.9rem', margin: 0 }}>
+            {data.name}
+          </h1>
+          <div className="results">
+            {data.items.map((item) => (
+              <article key={item.id} className="result">
+                <div className="result__head">
+                  <button
+                    type="button"
+                    className="result__ref"
+                    style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+                    onClick={() => navigate(`read/${item.book}/${item.chapter}?v=${item.verse_start}`)}
+                  >
+                    {item.label}
+                  </button>
+                </div>
+                {item.text && <p className="result__text">{item.text}</p>}
+                {item.note && <p className="quote">{item.note}</p>}
+                <div className="result__actions">
+                  <button
+                    type="button"
+                    className="result__action"
+                    onClick={() => navigate(`read/${item.book}/${item.chapter}?v=${item.verse_start}`)}
+                  >
+                    Read chapter
+                  </button>
+                  <button
+                    type="button"
+                    className="result__action result__action--quiet"
+                    onClick={() => removeItem(item.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </article>
+            ))}
+            {data.items.length === 0 && (
+              <Empty mark="No verses yet">
+                <p>Add a verse to this thread from its note editor while you're reading.</p>
+              </Empty>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function NoteList({ actions, notesVersion, navigate }) {
+  const [q, setQ] = useState('')
+  const query = useDebounced(q, 200)
+  const { data, error, loading } = useAsync(() => api.notes({ q: query }), [query, notesVersion])
+  const notes = data?.notes ?? []
+
+  return (
+    <>
       <SearchField value={q} onChange={setQ} placeholder="Search your notes" />
       {loading && <Spinner label="Reading" />}
       <ErrorNote error={error} />
@@ -686,33 +1111,33 @@ export function NotesView({ navigate, actions, notesVersion }) {
         </Empty>
       )}
 
-      <div className="stack">
+      <div className="results">
         {notes.map((note) => (
-          <article key={note.id} className="card card--verdigris">
-            <div className="card__head">
-              <CallNumber onClick={() => actions.note(note.verse_ref, note.translation)}>
-                {note.verse_ref}
-              </CallNumber>
-              <span className="tag">{note.label}</span>
-              <span className="tag" style={{ marginLeft: 'auto' }}>
-                {formatDate(note.updated_at)}
-              </span>
+          <article key={note.id} className="result">
+            <div className="result__head">
+              <button
+                type="button"
+                className="result__ref"
+                style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+                onClick={() => actions.note(note.verse_ref, note.translation)}
+              >
+                {note.label}
+              </button>
+              <span className="result__kind">{formatDate(note.updated_at)}</span>
             </div>
             <p className="note-body">{note.body}</p>
             {note.verse_text && <p className="quote">{note.verse_text}</p>}
-            <div className="card__actions">
+            <div className="result__actions">
               <button
                 type="button"
-                className="action"
-                onClick={() =>
-                  navigate(`read/${note.book}/${note.chapter}?v=${note.verse}`)
-                }
+                className="result__action"
+                onClick={() => navigate(`read/${note.book}/${note.chapter}?v=${note.verse}`)}
               >
                 Read chapter
               </button>
               <button
                 type="button"
-                className="action action--verdigris"
+                className="result__action"
                 onClick={() => actions.note(note.verse_ref, note.translation)}
               >
                 Edit
@@ -721,6 +1146,49 @@ export function NotesView({ navigate, actions, notesVersion }) {
           </article>
         ))}
       </div>
-    </div>
+    </>
+  )
+}
+
+function HighlightList({ actions, highlightsVersion, navigate }) {
+  const { data, error, loading } = useAsync(() => api.highlights(), [highlightsVersion])
+  const highlights = data?.highlights ?? []
+
+  return (
+    <>
+      {loading && <Spinner label="Reading" />}
+      <ErrorNote error={error} />
+      {!loading && highlights.length === 0 && (
+        <Empty mark="Nothing highlighted">
+          <p>Select a verse while reading and choose Highlight.</p>
+        </Empty>
+      )}
+      <div className="results">
+        {highlights.map((h) => (
+          <article key={h.id} className="result">
+            <div className="result__head">
+              <button
+                type="button"
+                className="result__ref"
+                style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+                onClick={() => navigate(`read/${h.book}/${h.chapter}?v=${h.verse}`)}
+              >
+                {h.label}
+              </button>
+              <span className="result__kind">{formatDate(h.created_at)}</span>
+            </div>
+            <div className="result__actions">
+              <button
+                type="button"
+                className="result__action result__action--quiet"
+                onClick={() => actions.toggleHighlight(h.verse_ref, true)}
+              >
+                Remove
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
   )
 }

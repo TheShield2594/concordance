@@ -6,7 +6,7 @@ export function parseHash(hash) {
   const [path, search] = raw.split('?')
   const parts = path.split('/').filter(Boolean)
   return {
-    tab: parts[0] || 'search',
+    tab: parts[0] || 'today',
     parts: parts.slice(1),
     query: Object.fromEntries(new URLSearchParams(search || '')),
   }
@@ -70,6 +70,20 @@ export function useAsync(fn, deps, { skip = false } = {}) {
   return { ...state, reload: useCallback(() => setNonce((n) => n + 1), []) }
 }
 
+/** Whether a media query currently matches -- the Mac three-column layout
+ * kicks in above 68rem; everything below that is the phone chrome. */
+export function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mql = window.matchMedia(query)
+    const onChange = () => setMatches(mql.matches)
+    onChange()
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [query])
+  return matches
+}
+
 /** Remembered translation preference. */
 export function useStoredState(key, initial) {
   const [value, setValue] = useState(() => {
@@ -87,4 +101,33 @@ export function useStoredState(key, initial) {
     }
   }, [key, value])
   return [value, setValue]
+}
+
+/**
+ * A small piece of structured client-only state: where the reader last was,
+ * which topic they last opened. Nothing the server needs to know -- there is
+ * no session, no account -- but worth remembering across visits for the
+ * Today screen's "picking up where you left off".
+ */
+export function useStoredJSON(key, initial) {
+  const [value, setValue] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(key)
+      return raw ? JSON.parse(raw) : initial
+    } catch {
+      return initial
+    }
+  })
+  const set = useCallback(
+    (next) => {
+      setValue(next)
+      try {
+        window.localStorage.setItem(key, JSON.stringify(next))
+      } catch {
+        /* private mode -- preference just won't persist */
+      }
+    },
+    [key],
+  )
+  return [value, set]
 }
