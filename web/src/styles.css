@@ -14,7 +14,11 @@
   --foreground-soft: #5a6376; /* body copy that isn't scripture: descriptions, subtitles */
   --foreground-mid: #3a4356; /* a step darker than soft, a step lighter than foreground */
   --muted-foreground: #6e6857; /* labels, timestamps, chrome captions */
-  --verse-number: #a8a296; /* the small superscript beside a verse */
+  /* The small superscript beside a verse -- the only way to locate one in
+     the reading column, so it has to clear 4.5:1 on the page background
+     even though it reads visually as a step lighter than body text
+     (#a8a296 only manages ~2.4:1). */
+  --verse-number: #767059;
 
   --card: #ffffff;
   --card-foreground: #1c2434;
@@ -1554,6 +1558,14 @@ a {
     cursor: pointer;
     color: var(--foreground);
     text-align: left;
+  }
+
+  /* The control itself is the transparent <select> stretched over this
+     label, so its own focus ring is invisible -- give the label the ring
+     a keyboard user needs to see instead. */
+  .desktop__translation:focus-within {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 
   .desktop__translation-code {

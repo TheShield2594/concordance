@@ -139,7 +139,12 @@ export function ResultRow({ verse, onRead, onNote, onCrossRefs, onOriginal, note
       <div className="result__head">
         <span className="result__ref">{verse.book_name} {verse.chapter}:{verse.verse}</span>
         <span className="result__kind">
-          {verse.match_kind ? MATCH_LABEL[verse.match_kind] ?? verse.translation : verse.translation}
+          {/* Several translations can appear in one ALL-translations list, so
+              the kind tag never replaces the translation code -- it just
+              rides alongside it. */}
+          {verse.match_kind && MATCH_LABEL[verse.match_kind]
+            ? `${MATCH_LABEL[verse.match_kind]} · ${verse.translation}`
+            : verse.translation}
         </span>
       </div>
       <p className="result__text">

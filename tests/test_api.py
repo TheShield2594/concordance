@@ -5,6 +5,7 @@ without the database can't come back green having asserted nothing. Set
 CONCORDANCE_ALLOW_SKIP=1 to skip instead, which is what you want locally before
 the first `make data`.
 """
+import datetime
 import os
 import shutil
 import sqlite3
@@ -12,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -49,7 +51,13 @@ class ApiTests(unittest.TestCase):
 
         con = sqlite3.connect(cls.db)
         try:
-            con.execute("DELETE FROM notes")  # start from an empty notebook
+            # Start from an empty notebook -- otherwise an assertion here
+            # depends on whatever the developer's real database happens to
+            # hold (a highlighted verse, an existing thread).
+            con.execute("DELETE FROM notes")
+            con.execute("DELETE FROM highlights")
+            con.execute("DELETE FROM thread_items")
+            con.execute("DELETE FROM study_threads")
             con.commit()
         finally:
             con.close()
@@ -444,6 +452,10 @@ class ApiTests(unittest.TestCase):
         r = self.client.post("/api/highlights", json={"verse_ref": "PHP.99.1"})
         self.assertEqual(r.status_code, 404)
 
+    def test_highlight_on_a_verse_range_is_refused(self):
+        r = self.client.post("/api/highlights", json={"verse_ref": "PHP.4.6-7"})
+        self.assertEqual(r.status_code, 400)
+
     # -------------------------------------------------------- study threads
 
     def test_thread_lifecycle(self):
@@ -506,6 +518,16 @@ class ApiTests(unittest.TestCase):
         r = self.client.post("/api/threads", json={"name": "   "})
         self.assertEqual(r.status_code, 400)
 
+    def test_ranged_thread_item_flags_every_verse_in_the_range(self):
+        thread = self.client.post("/api/threads", json={"name": "Range test"}).json()
+        r = self.client.post(
+            f"/api/threads/{thread['id']}/items", json={"verse_ref": "PRO.3.5-6"}
+        )
+        self.assertEqual(r.status_code, 201)
+        ch = self.client.get("/api/chapter/PRO/3").json()
+        in_thread = {v["verse"]: v["in_thread"] for v in ch["verses"] if v["verse"] in (5, 6, 7)}
+        self.assertEqual(in_thread, {5: True, 6: True, 7: False})
+
     # -------------------------------------------------------------- today
 
     def test_today_is_deterministic_and_offline(self):
@@ -517,6 +539,20 @@ class ApiTests(unittest.TestCase):
         self.client.post("/api/threads", json={"name": "Most recently touched"})
         again = self.client.get("/api/today").json()
         self.assertEqual(again["recent_thread"]["name"], "Most recently touched")
+
+    def test_today_ranged_verse_has_matching_label_and_full_text(self):
+        # Day-of-year 23 lands on PHP.4.6-7, a two-verse range in the pool.
+        from server import main
+
+        with mock.patch.object(main, "datetime") as mock_dt:
+            mock_dt.date.today.return_value = datetime.date(2026, 1, 23)
+            body = self.client.get("/api/today").json()
+        vod = body["verse_of_day"]
+        self.assertEqual(vod["ref"], "PHP.4.6-7")
+        self.assertEqual(vod["label"], "Philippians 4:6-7")
+        both_verses = self.client.get("/api/verse/PHP.4.6-7").json()
+        joined = " ".join(v["text"] for v in both_verses["verses"] if v["translation"] == "KJV")
+        self.assertEqual(vod["verse"]["text"], joined)
 
     # ------------------------------------------------------- meaning search
 
@@ -536,6 +572,29 @@ class ApiTests(unittest.TestCase):
         ).json()
         self.assertTrue(all(v["match_kind"] == "exact" for v in body["verses"]))
         self.assertNotIn("JAS.2.17", [v["ref"] for v in body["verses"]])
+
+    def test_meaning_mode_verse_total_excludes_extras_and_pages_correctly(self):
+        exact = self.client.get(
+            "/api/search?q=faith+without+works+is+dead&translation=KJV&mode=exact"
+        ).json()
+        meaning = self.client.get(
+            "/api/search?q=faith+without+works+is+dead&translation=KJV&mode=meaning"
+        ).json()
+        # verse_total is the true FTS count, unaffected by the meaning-only
+        # extras riding along in `verses` on this first page.
+        self.assertEqual(meaning["verse_total"], exact["verse_total"])
+        exact_count = sum(1 for v in meaning["verses"] if v["match_kind"] != "meaning")
+        self.assertLessEqual(exact_count, meaning["verse_total"])
+        # Paging with the client's offset (count of non-meaning results
+        # loaded so far) must not skip past real FTS matches.
+        page2 = self.client.get(
+            "/api/search?q=faith+without+works+is+dead&translation=KJV&mode=meaning"
+            f"&offset={exact_count}&include=verses"
+        ).json()
+        self.assertTrue(all(v["match_kind"] == "exact" for v in page2["verses"]))
+        seen_first_page = {v["ref"] for v in meaning["verses"] if v["match_kind"] != "meaning"}
+        seen_second_page = {v["ref"] for v in page2["verses"]}
+        self.assertEqual(seen_first_page & seen_second_page, set())
 
     def test_strongs_mode_finds_by_transliteration_without_accents(self):
         body = self.client.get("/api/search?q=logos&mode=strongs").json()

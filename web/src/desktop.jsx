@@ -41,6 +41,19 @@ export default function Desktop(props) {
   const [book, chapter] = route.tab === 'read' ? route.parts : []
   useEffect(() => setFocusedRef(null), [book, chapter])
 
+  // The titlebar advertises ⌘K; make it true, and steal it from the
+  // browser's own address-bar shortcut before that fires instead.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        navigate('search')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navigate])
+
   const threads = useAsync(() => api.threads(), [threadsVersion])
   const books = meta?.books ?? []
   const currentBook = (book || '').toUpperCase()
@@ -232,7 +245,7 @@ export default function Desktop(props) {
                 <NotesPanel
                   verseRef={focusedRef}
                   translation={readable}
-                  onChanged={() => {}}
+                  onChanged={props.bumpNotes}
                   onThreadsChanged={() => threads.reload()}
                   onRead={(ref) => {
                     const [b, c, v] = ref.split('.')

@@ -316,23 +316,21 @@ THREAD_ITEM_COLUMNS = (
 )
 
 
-def rescue_table(db_path: Path, table: str, columns: str) -> list[tuple]:
+def rescue_table(con: sqlite3.Connection, table: str, columns: str) -> list[tuple]:
     """Read personal data out of the database that is about to be replaced.
 
     Scripture can always be rebuilt from the sources; notes, highlights and
-    study threads cannot. Opening the database properly (rather than copying
-    the file) also picks up anything still sitting in the WAL.
+    study threads cannot. A table simply not existing yet (an older database,
+    from before this table was added) is the one expected failure and reads
+    as empty; any other read error is a real problem with the file and must
+    stop the build rather than quietly discard someone's notes.
     """
-    if not db_path.exists():
+    exists = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [table]
+    ).fetchone()
+    if not exists:
         return []
-    con = sqlite3.connect(db_path)
-    try:
-        con.execute(f"SELECT 1 FROM {table} LIMIT 1")
-        return con.execute(f"SELECT {columns} FROM {table} ORDER BY id").fetchall()
-    except sqlite3.DatabaseError:
-        return []  # older or corrupt file with no such table yet
-    finally:
-        con.close()
+    return con.execute(f"SELECT {columns} FROM {table} ORDER BY id").fetchall()
 
 
 def require_fts5() -> None:
@@ -356,12 +354,32 @@ def discard(path: Path) -> None:
             candidate.unlink()
 
 
+def rescue_all(db_path: Path) -> tuple[list[tuple], list[tuple], list[tuple], list[tuple]]:
+    """Read every personal table out of the database in one snapshot.
+
+    One connection, one (deferred, read-only) transaction: a thread and the
+    item a concurrent write is adding to it are captured together or not at
+    all, rather than one call seeing the thread and a later call missing the
+    item that hadn't committed yet.
+    """
+    if not db_path.exists():
+        return [], [], [], []
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute("BEGIN")
+        notes = rescue_table(con, "notes", NOTE_COLUMNS)
+        highlights = rescue_table(con, "highlights", HIGHLIGHT_COLUMNS)
+        threads = rescue_table(con, "study_threads", THREAD_COLUMNS)
+        thread_items = rescue_table(con, "thread_items", THREAD_ITEM_COLUMNS)
+        con.execute("COMMIT")
+        return notes, highlights, threads, thread_items
+    finally:
+        con.close()
+
+
 def build(db_path: Path) -> None:
     require_fts5()
-    saved_notes = rescue_table(db_path, "notes", NOTE_COLUMNS)
-    saved_highlights = rescue_table(db_path, "highlights", HIGHLIGHT_COLUMNS)
-    saved_threads = rescue_table(db_path, "study_threads", THREAD_COLUMNS)
-    saved_thread_items = rescue_table(db_path, "thread_items", THREAD_ITEM_COLUMNS)
+    saved_notes, saved_highlights, saved_threads, saved_thread_items = rescue_all(db_path)
     kept = sum(
         bool(x)
         for x in (saved_notes, saved_highlights, saved_threads, saved_thread_items)

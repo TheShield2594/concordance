@@ -55,9 +55,16 @@ export default function App() {
     strongs: useCallback((number) => setStrongsSheet({ number }), []),
     toggleHighlight: useCallback(
       async (ref, isHighlighted) => {
-        if (isHighlighted) await api.removeHighlight(ref)
-        else await api.addHighlight(ref)
-        bumpHighlights()
+        try {
+          if (isHighlighted) await api.removeHighlight(ref)
+          else await api.addHighlight(ref)
+          bumpHighlights()
+        } catch (e) {
+          // The selection bar fires this without awaiting it, so a failure
+          // has to say something itself rather than becoming a silent
+          // unhandled rejection the user never sees.
+          window.alert(`Couldn't update the highlight: ${e.message}`)
+        }
       },
       [bumpHighlights],
     ),
@@ -109,6 +116,7 @@ export default function App() {
     notesVersion,
     highlightsVersion,
     threadsVersion,
+    bumpNotes,
   }
 
   const sheets = (

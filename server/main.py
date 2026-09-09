@@ -288,7 +288,12 @@ def api_search(
 
         # Meaning results ride along on the first page only -- they are not
         # part of the FTS ranking "Load more" pages through, just a fixed set
-        # of neighbours shown alongside it.
+        # of neighbours shown alongside it. `verse_total` stays the true FTS
+        # count throughout: it is also the paging bound "Load more" uses to
+        # ask for the next slice of *FTS* results, and inflating it with a
+        # one-off batch of meaning-only extras would either overstate the
+        # match count after page 2 (which carries no extras) or make the
+        # client ask the FTS query for an offset past its real result set.
         if mode == "meaning" and offset == 0:
             index = meaning_index(con)
             if index is not None:
@@ -316,7 +321,6 @@ def api_search(
                     if len(extra) >= limit:
                         break
                 result["verses"].extend(extra)
-                result["verse_total"] += len(extra)
 
     if "topics" in wanted:
         result["topics"] = topic_matches(con, q, limit=12)
@@ -560,13 +564,12 @@ def get_chapter(
             [book, chapter],
         )
     }
-    threaded = {
-        r[0]
-        for r in con.execute(
-            "SELECT verse_start FROM thread_items WHERE book = ? AND chapter = ?",
-            [book, chapter],
-        )
-    }
+    threaded: set[int] = set()
+    for start, end in con.execute(
+        "SELECT verse_start, verse_end FROM thread_items WHERE book = ? AND chapter = ?",
+        [book, chapter],
+    ):
+        threaded.update(range(start, end + 1))
     verses = []
     for r in rows:
         v = verse_row(r)
@@ -1123,8 +1126,12 @@ def list_highlights(
 @app.post("/api/highlights", status_code=201)
 def create_highlight(body: HighlightIn, con: sqlite3.Connection = Depends(get_db)):
     parsed = refs.parse(body.verse_ref)
-    if parsed is None or not parsed.verse_start:
-        raise HTTPException(400, "expected a reference like PHP.4.6")
+    # A highlight marks one verse. A range would store verse_ref="PHP.4.6-7"
+    # against verse=6 alone -- DELETE /api/highlights/PHP.4.6 could never
+    # address it, and PHP.4.6 and PHP.4.6-7 would collide oddly against the
+    # UNIQUE(verse_ref) constraint despite naming overlapping verses.
+    if parsed is None or not parsed.verse_start or parsed.verse_end != parsed.verse_start:
+        raise HTTPException(400, "expected a single verse, like PHP.4.6")
     exists = con.execute(
         "SELECT 1 FROM verses WHERE book = ? AND chapter = ? AND verse = ?",
         [parsed.book, parsed.chapter, parsed.verse_start],
@@ -1426,13 +1433,24 @@ def today(translation: str = Query("KJV"), con: sqlite3.Connection = Depends(get
     day = datetime.date.today().timetuple().tm_yday
     ref = VERSE_OF_THE_DAY_POOL[day % len(VERSE_OF_THE_DAY_POOL)]
     parsed = refs.parse(ref)
-    row = con.execute(
+    # A pool entry can be a range (PHP.4.6-7): fetch every verse in it and
+    # join the text, so the card's text actually matches the range its own
+    # label names instead of showing just the first verse under a heading
+    # that promises more.
+    rows = con.execute(
         """SELECT v.id, v.book, v.chapter, v.verse, v.translation, v.text,
                   b.name AS book_name
            FROM verses v JOIN books b ON b.code = v.book
-           WHERE v.book = ? AND v.chapter = ? AND v.verse = ? AND v.translation = ?""",
-        [parsed.book, parsed.chapter, parsed.verse_start, translation],
-    ).fetchone()
+           WHERE v.book = ? AND v.chapter = ? AND v.verse BETWEEN ? AND ?
+             AND v.translation = ?
+           ORDER BY v.verse""",
+        [parsed.book, parsed.chapter, parsed.verse_start, parsed.verse_end, translation],
+    ).fetchall()
+
+    verse = None
+    if rows:
+        verse = verse_row(rows[0])
+        verse["text"] = " ".join(r["text"] for r in rows)
 
     recent_thread = con.execute(
         "SELECT * FROM study_threads ORDER BY updated_at DESC, id DESC LIMIT 1"
@@ -1441,8 +1459,8 @@ def today(translation: str = Query("KJV"), con: sqlite3.Connection = Depends(get
     return {
         "verse_of_day": {
             "ref": str(parsed),
-            "label": refs.label(row["book_name"], parsed) if row else ref,
-            "verse": verse_row(row) if row else None,
+            "label": refs.label(rows[0]["book_name"], parsed) if rows else ref,
+            "verse": verse,
         },
         "recent_thread": thread_row(con, recent_thread) if recent_thread else None,
     }

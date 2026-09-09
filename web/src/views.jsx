@@ -35,14 +35,16 @@ const SEARCH_MODES = [
 ]
 
 async function share(text) {
-  try {
-    if (navigator.share) {
+  if (navigator.share) {
+    try {
       await navigator.share({ text })
       return
+    } catch (e) {
+      // Cancelling the share sheet is the one rejection that means "stop
+      // here" -- anything else (no permission, an unshareable payload) is a
+      // real failure the clipboard fallback below should still attempt.
+      if (e.name === 'AbortError') return
     }
-  } catch {
-    /* user cancelled the share sheet -- nothing to do */
-    return
   }
   try {
     await navigator.clipboard.writeText(text)
@@ -209,7 +211,15 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
   useEffect(() => setExtra([]), [query, translation, sort, mode])
 
   const verses = useMemo(() => [...(data?.verses ?? []), ...extra], [data, extra])
-  const more = data ? verses.length < data.verse_total : false
+  // verse_total is the true FTS count and the paging cursor "Load more" has
+  // to respect; meaning-only extras ride along on page 1 but aren't part of
+  // that count, so they're excluded from the offset math too, or the next
+  // fetch would skip past real FTS results the extras' count stood in for.
+  const ftsLoaded = useMemo(
+    () => verses.filter((v) => v.match_kind !== 'meaning').length,
+    [verses],
+  )
+  const more = data ? ftsLoaded < data.verse_total : false
 
   const loadMore = async () => {
     setLoadingMore(true)
@@ -219,7 +229,7 @@ export function SearchView({ route, navigate, translation, setTranslation, chips
         q: query,
         translation,
         limit: PAGE,
-        offset: verses.length,
+        offset: ftsLoaded,
         include: 'verses',
         sort,
         mode,
@@ -896,9 +906,22 @@ export function Chapter({
 export function NotesView({ route, navigate, actions, notesVersion, highlightsVersion, threadsVersion }) {
   const threadId = route.parts[0] === 'threads' ? route.parts[1] : null
   const [filter, setFilter] = useState('threads')
+  const [createError, setCreateError] = useState(null)
 
   if (threadId) {
     return <ThreadDetail threadId={threadId} navigate={navigate} actions={actions} threadsVersion={threadsVersion} />
+  }
+
+  const newThread = async () => {
+    const name = window.prompt('Name this thread')
+    if (!name?.trim()) return
+    setCreateError(null)
+    try {
+      const thread = await api.createThread(name.trim())
+      navigate(`notes/threads/${thread.id}`)
+    } catch (e) {
+      setCreateError(e)
+    }
   }
 
   return (
@@ -911,12 +934,7 @@ export function NotesView({ route, navigate, actions, notesVersion, highlightsVe
           type="button"
           className="icon-btn"
           title="New thread"
-          onClick={async () => {
-            const name = window.prompt('Name this thread')
-            if (!name?.trim()) return
-            const thread = await api.createThread(name.trim())
-            navigate(`notes/threads/${thread.id}`)
-          }}
+          onClick={newThread}
           style={{
             width: '2.1rem',
             height: '2.1rem',
@@ -928,6 +946,8 @@ export function NotesView({ route, navigate, actions, notesVersion, highlightsVe
           +
         </button>
       </div>
+
+      <ErrorNote error={createError} />
 
       <div className="chips">
         {[
