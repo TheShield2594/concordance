@@ -8,6 +8,8 @@ import {
   ErrorNote,
   Marked,
   Panel,
+  ReadingModeSwitch,
+  Reference,
   ResultRow,
   SearchField,
   Section,
@@ -23,6 +25,7 @@ import {
   IconChevronRight,
   IconNote,
   IconOriginal,
+  IconOrnament,
   IconPlay,
   IconShare,
 } from './icons.jsx'
@@ -84,30 +87,41 @@ export function TodayView({ actions, navigate, readable, threadsVersion }) {
 
       {verse && (
         <Panel variant="soft" className="today-hero">
+          <span className="today-hero__ornament">
+            <IconOrnament size={18} />
+          </span>
           <span className="panel__eyebrow">Verse of the day</span>
-          <p className="today-hero__text">{verse.text}</p>
-          <div className="today-hero__foot">
-            <button type="button" className="result__action" onClick={openVerse}>
-              {data.verse_of_day.label} · {verse.translation}
+          {/* The composition holds a short verse beautifully and a long one
+              badly, so a long one keeps the composition and loses a size. */}
+          <p
+            className={`today-hero__text${
+              verse.text.length > 120 ? ' today-hero__text--long' : ''
+            }`}
+          >
+            {verse.text}
+          </p>
+          <Reference
+            aside={verse.translation}
+            onClick={openVerse}
+            title="Open in the reader"
+          >
+            {data.verse_of_day.label}
+          </Reference>
+          <div className="today-hero__actions">
+            <button
+              type="button"
+              className="today-hero__action"
+              onClick={() => actions.note(verse.ref, verse.translation)}
+            >
+              <IconBookmark size={17} /> Note
             </button>
-            <div className="today-hero__actions">
-              <button
-                type="button"
-                className="icon-btn"
-                title="Add a note"
-                onClick={() => actions.note(verse.ref, verse.translation)}
-              >
-                <IconBookmark size={19} />
-              </button>
-              <button
-                type="button"
-                className="icon-btn"
-                title="Share"
-                onClick={() => share(`${verse.text} — ${data.verse_of_day.label}`)}
-              >
-                <IconShare size={19} />
-              </button>
-            </div>
+            <button
+              type="button"
+              className="today-hero__action"
+              onClick={() => share(`${verse.text} — ${data.verse_of_day.label}`)}
+            >
+              <IconShare size={17} /> Share
+            </button>
           </div>
         </Panel>
       )}
@@ -619,6 +633,8 @@ export function ReadView({
   actions,
   notesVersion,
   highlightsVersion,
+  readingMode,
+  setReadingMode,
   desktop,
   focusedRef,
   onFocusVerse,
@@ -641,6 +657,8 @@ export function ReadView({
       actions={actions}
       notesVersion={notesVersion}
       highlightsVersion={highlightsVersion}
+      readingMode={readingMode}
+      setReadingMode={setReadingMode}
       desktop={desktop}
       focusedRef={focusedRef}
       onFocusVerse={onFocusVerse}
@@ -731,6 +749,8 @@ export function Chapter({
   actions,
   notesVersion,
   highlightsVersion,
+  readingMode,
+  setReadingMode,
   desktop,
   focusedRef,
   onFocusVerse,
@@ -769,18 +789,20 @@ export function Chapter({
   return (
     <div className={desktop ? 'desktop__reader-inner' : 'view'}>
       {!desktop && (
-        <div className="section__head">
+        <div className="reader__head">
           <button type="button" className="link" onClick={() => navigate(`read/${book.toUpperCase()}`)}>
             ← Chapters
           </button>
-          <button
-            type="button"
-            className="link"
-            onClick={() => navigate(`read/${book.toUpperCase()}`)}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-          >
-            {data?.label} <IconChevronDown size={13} />
-          </button>
+          <div className="reader__head-left">
+            <Reference
+              aside={<IconChevronDown size={12} />}
+              onClick={() => navigate(`read/${book.toUpperCase()}`)}
+              title="Pick a chapter"
+            >
+              {data?.label ?? `${book.toUpperCase()} ${chapter}`}
+            </Reference>
+            <ReadingModeSwitch value={readingMode} onChange={setReadingMode} />
+          </div>
         </div>
       )}
 
@@ -795,9 +817,12 @@ export function Chapter({
         <>
           <div className="reader">
             {desktop && (
-              <div className="reader__meta">
-                <span className="reader__book">{data.book_name}</span>
-                <h2 className="reader__chapter">Chapter {data.chapter}</h2>
+              <div className="reader__head">
+                <div className="reader__meta">
+                  <span className="reader__book">{data.book_name}</span>
+                  <h2 className="reader__chapter">Chapter {data.chapter}</h2>
+                </div>
+                <ReadingModeSwitch value={readingMode} onChange={setReadingMode} />
               </div>
             )}
             <div

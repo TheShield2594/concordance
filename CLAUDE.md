@@ -32,7 +32,7 @@ Work on `claude/concordance-bible-app-44mnid` unless told otherwise. Push with
 make setup    # venv, download sources (~130 MB), build the database, build the UI
 make serve    # one process on 127.0.0.1:8000 (HOST=0.0.0.0 for the tailnet)
 make dev      # API on 8000, Vite with hot reload on 5173
-make test     # 58 tests, run before every commit
+make test     # 84 tests, run before every commit
 make data     # rebuild data/concordance.db from the downloaded sources
 make clean    # build artifacts only, leaves the database alone
 make reset    # destructive: deletes the database, notes and all
@@ -102,24 +102,36 @@ verse text.
 ## Design system
 
 Tokens live at the top of `web/src/styles.css`, shadcn-style names: `--background`
-`#F8F7F4`, `--foreground` `#1A1F2E`, `--card` white, `--primary` sage `#7C9082`,
-`--muted` `#E8E6E1`, `--destructive` `#C73E3A`. A `.dark` block mirrors the set on
-near-black; an inline script in `index.html` keeps the `dark` class on `<html>` in
-step with the system preference, so every colour has to work in both themes — which
-is why everything goes through the variables. Don't hardcode hex.
+parchment `#faf7f1`, `--foreground` near-navy `#1c2434`, `--card` white, `--primary`
+sage `#4a5a42`, `--card-soft` `#f3eee4`, `--destructive` `#c0392b`. Three blocks
+mirror that set: `.dark` (the system's dark mode), `.night` (see below), and the
+`--dark-surface` family for dark chrome used deliberately inside the light theme —
+the tab bar, the Original sheet, study-thread cards. Every colour has to work in all
+of them, which is why everything goes through the variables. Don't hardcode hex.
 
-Signifier for headings and scripture (licensed, so it only renders where the device
-has it — Source Serif 4 is bundled behind it), Antic for UI text, JetBrains Mono for
-references and chrome. Sage at `#7C9082` misses 4.5:1 as small text on white: type
-wears `--primary-strong`, surfaces wear `--primary`.
+Newsreader for headings and scripture (Source Serif 4 bundled behind it), the system
+sans for UI text, and the platform monospace for references — that one is a font
+stack, not a download, because every target device already has one. Sage misses
+4.5:1 as small text on parchment at the mockup's `#7c9082`, which is why `--primary`
+is the darker `#4a5a42` and the lighter `--primary-light` is for fills only.
 
-Every reference renders through the `CallNumber` component: dark badge, light
-monospace, identical everywhere — the `--stamp` tokens keep it a dark badge in the
-dark theme too. It's the signature element, so keep it consistent — Strong's numbers
-wear the same stamp. Sage marks the primary track (scripture and the original
-languages), moss `--moss` the secondary (topics, notes, cross-references).
+A reference that names what is on screen renders through the `Reference` component:
+dark badge, light monospace, identical everywhere — its own `--stamp` tokens keep it
+a badge in every theme, and inside dark chrome it inverts to a light wash of the same
+shape. It's the signature element, so keep it consistent — Strong's numbers wear the
+matching `Badge`. A reference inside a flowing list stays quiet (`.result__ref`): a
+page of twenty stamps is a page of badges, not a page of scripture.
 Fonts are bundled through fontsource; nothing loads from a CDN. Source Serif 4 covers
 Greek; pointed Hebrew needs Noto Serif Hebrew, which is why it is imported separately.
+
+**The reader has its own palette, and only the reader.** `concordance.readingMode` is
+day, auto or night; `App.jsx` puts `night` on `<html>` while the Read tab is open and
+takes it off on the way out, and reasserts the choice when the system preference moves
+under it (the inline script in `index.html` keeps writing `dark` on every change).
+`.night` is not `.dark` reused: scripture sits at ~11.9:1 rather than ~15:1, because
+light serif at maximum contrast on near-black blooms, and the bloom is what makes a
+long passage tiring. Anything new that reads for minutes rather than seconds belongs
+inside that palette; anything that has to stay findable in it still clears 4.5:1.
 
 The interlinear grid takes its `dir` from the language, which sets the reading order
 of the word slips. Each slip is `dir="ltr"` inside, because its transliteration and

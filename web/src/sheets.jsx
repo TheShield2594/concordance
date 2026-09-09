@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from './api.js'
-import { Badge, ErrorNote, Panel, Sheet, Spinner } from './components.jsx'
+import { Badge, ErrorNote, Panel, Reference, Sheet, Spinner } from './components.jsx'
 import { formatDateTime } from './format.js'
 import { useAsync } from './hooks.js'
 
@@ -140,7 +140,11 @@ export function NotesPanel({ verseRef, translation, onChanged, onThreadsChanged,
 export function NoteSheet({ verseRef, translation, onClose, onChanged, onThreadsChanged, onRead }) {
   const heading = useAsync(() => api.verse(verseRef, translation), [verseRef, translation])
   return (
-    <Sheet eyebrow={`${verseRef} · ${translation}`} title={heading.data?.label ?? 'Note'} onClose={onClose}>
+    <Sheet
+      eyebrow={<Reference aside={translation}>{verseRef}</Reference>}
+      title={heading.data?.label ?? 'Note'}
+      onClose={onClose}
+    >
       <NotesPanel
         verseRef={verseRef}
         translation={translation}
@@ -250,7 +254,7 @@ export function OriginalPanel({ verseRef, translation, onStrongs }) {
 
       {data && (
         <p className="sheet__eyebrow" style={{ margin: '-0.4rem 0 0' }}>
-          {data.language} · {data.label}
+          <Reference aside={data.language}>{data.label}</Reference>
         </p>
       )}
 
@@ -540,7 +544,7 @@ export function CrossRefSheet({ verseRef, translation, onClose, onRead, onTopic 
   const heading = useAsync(() => api.verse(verseRef, translation), [verseRef, translation])
   return (
     <Sheet
-      eyebrow={`${verseRef} · ${heading.data?.label ?? verseRef}`}
+      eyebrow={<Reference aside={heading.data?.label}>{verseRef}</Reference>}
       title="Cross-references"
       onClose={onClose}
     >

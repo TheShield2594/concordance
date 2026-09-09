@@ -18,11 +18,28 @@ const TABS = [
 export default function App() {
   const [route, navigate] = useRoute()
   const isDesktop = useMediaQuery('(min-width: 68rem)')
+  const prefersDark = useMediaQuery('(prefers-color-scheme: dark)')
+  // day | auto | night, for the reading surface only. Everywhere else follows
+  // the system, always.
+  const [readingMode, setReadingMode] = useStoredState('concordance.readingMode', 'auto')
   const [translation, setTranslation] = useStoredState('concordance.translation', 'ALL')
   // The reader has to name one translation. Keeping that choice separate means
   // a search filtered across ALL stays ALL when you go read something.
   const [reading, setReading] = useStoredState('concordance.reading', 'KJV')
   const meta = useAsync(() => api.meta(), [])
+
+  // The reader is the only screen that gets its own palette, and it gets the
+  // whole shell with it: a parchment tab bar under a dark reading column looks
+  // like a bug. `night` carries a full token set of its own, so nothing here
+  // ever leaves both classes on at once -- and because the inline script in
+  // index.html keeps writing `dark` on every system change, this reasserts the
+  // choice whenever that preference moves.
+  useEffect(() => {
+    const mode = route.tab === 'read' ? readingMode : 'auto'
+    const root = document.documentElement
+    root.classList.toggle('night', mode === 'night')
+    root.classList.toggle('dark', mode === 'auto' && prefersDark)
+  }, [route.tab, readingMode, prefersDark])
 
   // Sheets: one note editor and one cross-reference panel at a time.
   const [noteSheet, setNoteSheet] = useState(null)
@@ -117,6 +134,8 @@ export default function App() {
     highlightsVersion,
     threadsVersion,
     bumpNotes,
+    readingMode,
+    setReadingMode,
   }
 
   const sheets = (
